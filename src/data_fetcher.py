@@ -125,6 +125,19 @@ class AuthenticationError(SpotifyAPIError):
     pass
 
 
+class RateLimitPenaltyError(SpotifyAPIError):
+    """
+    Raised when Spotify returns a Retry-After exceeding the inline retry cap
+    (see _make_request). Distinct from SpotifyAPIError so callers can
+    selectively re-raise it past broad `except Exception` handlers instead
+    of treating it as an ordinary per-request failure -- a large penalty
+    means the whole crawl should stop, not just the current request.
+    """
+    def __init__(self, retry_after: int, message: str = None):
+        self.retry_after = retry_after
+        super().__init__(message or f"Rate limited with Retry-After={retry_after}s")
+
+
 class SpotifyAPIClient:
     """
     Client for interacting with the Spotify Web API.
@@ -241,7 +254,8 @@ class SpotifyAPIClient:
                     # fail loudly instead of silently absorbing an unbounded delay.
                     max_inline_wait = 60
                     if retry_after > max_inline_wait:
-                        raise SpotifyAPIError(
+                        raise RateLimitPenaltyError(
+                            retry_after,
                             f"Rate limited with Retry-After={retry_after}s (> {max_inline_wait}s cap). "
                             f"Spotify is asking us to back off significantly -- not retrying inline. "
                             f"Wait at least {retry_after}s before the next attempt (via --resume)."

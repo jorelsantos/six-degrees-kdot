@@ -15,12 +15,12 @@ import time
 import threading
 from pathlib import Path
 from typing import Set, Dict, Any, List, Tuple
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from data_fetcher import SpotifyAPIClient, get_rate_limiter
+from data_fetcher import SpotifyAPIClient, get_rate_limiter, RateLimitPenaltyError
 from database import CollaborationDatabase
 
 
@@ -119,6 +119,11 @@ def process_single_artist(
 
         return (artist_name, collaborator_ids, len(collaborators))
 
+    except RateLimitPenaltyError:
+        # Do not swallow this as an ordinary per-artist failure -- a large
+        # rate-limit penalty means the whole crawl should stop, not just this
+        # artist. Re-raise so it reaches build_network's collection loop.
+        raise
     except Exception as e:
         print(f"  Error processing artist {artist_id}: {e}")
         return ("", [], 0)
@@ -169,9 +174,18 @@ def build_network(
         next_level: Set[str] = set()
         completed_count = 0
 
-        # Process artists in parallel
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks
+        # Process artists in parallel. A stuck worker (e.g. a socket that never
+        # times out at the OS/library level despite our own timeout= settings)
+        # must not block the whole level indefinitely -- Python threads can't be
+        # force-killed, and ThreadPoolExecutor's own `with`-block shutdown waits
+        # for every submitted task. So this loop bounds total wait time itself:
+        # it polls for completions with a per-wait timeout, and gives up on
+        # whatever's still pending after too many consecutive stalled polls,
+        # moving on to the next level rather than hanging forever. Any
+        # abandoned (never-crawled) artists simply stay eligible for a future
+        # --resume run, since they're never marked `crawled`.
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        try:
             future_to_artist = {
                 executor.submit(
                     process_single_artist,
@@ -184,24 +198,54 @@ def build_network(
                 for artist_id in artists_to_process
             }
 
-            # Collect results as they complete
-            for future in as_completed(future_to_artist):
-                artist_id = future_to_artist[future]
-                try:
-                    artist_name, collaborator_ids, collab_count = future.result()
-                    if artist_name:
-                        completed_count += 1
-                        # Add collaborators to next level
-                        next_level.update(collaborator_ids)
+            pending = set(future_to_artist.keys())
+            poll_timeout = 90  # seconds to wait for at least one completion
+            max_consecutive_stalls = 3  # ~4.5 minutes of zero progress before giving up on this level
 
-                        # Progress update every 10 artists
-                        if completed_count % 10 == 0:
-                            rate_stats = get_rate_limiter().get_stats()
-                            print(f"  Processed {completed_count}/{len(artists_to_process)} artists "
-                                  f"(API: {rate_stats['requests_in_window']}/{rate_stats['max_requests']} req/30s)")
+            stall_streak = 0
+            while pending:
+                done, pending = wait(pending, timeout=poll_timeout, return_when=FIRST_COMPLETED)
 
-                except Exception as e:
-                    print(f"  Error with artist {artist_id}: {e}")
+                if not done:
+                    stall_streak += 1
+                    print(f"  WARNING: no artists completed in the last {poll_timeout}s "
+                          f"({len(pending)} still pending; stall {stall_streak}/{max_consecutive_stalls}) "
+                          f"-- a worker may be stuck on a hung connection.")
+                    if stall_streak >= max_consecutive_stalls:
+                        print(f"  Giving up on {len(pending)} stuck artist(s) for this level; "
+                              f"they remain uncrawled and will be retried on the next --resume run.")
+                        break
+                    continue
+
+                stall_streak = 0
+                for future in done:
+                    artist_id = future_to_artist[future]
+                    try:
+                        artist_name, collaborator_ids, collab_count = future.result()
+                        if artist_name:
+                            completed_count += 1
+                            # Add collaborators to next level
+                            next_level.update(collaborator_ids)
+
+                            # Progress update every 10 artists
+                            if completed_count % 10 == 0:
+                                rate_stats = get_rate_limiter().get_stats()
+                                print(f"  Processed {completed_count}/{len(artists_to_process)} artists "
+                                      f"(API: {rate_stats['requests_in_window']}/{rate_stats['max_requests']} req/30s)")
+
+                    except RateLimitPenaltyError:
+                        # Re-raise past this loop, the `while pending` loop, and the
+                        # `for level` loop -- a large penalty stops the entire
+                        # multi-level crawl, not just this artist or this level.
+                        # The enclosing `finally: executor.shutdown(...)` still runs
+                        # during this unwind before the exception reaches main().
+                        raise
+                    except Exception as e:
+                        print(f"  Error with artist {artist_id}: {e}")
+        finally:
+            # Don't block on any leaked/stuck threads -- cancel unstarted work
+            # and return immediately; abandoned threads die with the process.
+            executor.shutdown(wait=False, cancel_futures=True)
 
         level_time = time.time() - level_start
         print(f"  Level {level + 1} completed in {level_time:.1f} seconds")
