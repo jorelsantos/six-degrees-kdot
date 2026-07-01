@@ -223,7 +223,9 @@ def build_network(
 
 
 def main():
-    """Main entry point for building the network."""
+    """Main entry point for building the network. Exits non-zero on failure
+    so an unattended/background run signals failure clearly rather than
+    silently exiting 0."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Build the Six Degrees of Kendrick Lamar collaboration network.")
@@ -292,14 +294,14 @@ def main():
         print(f"\nError: Could not initialize Spotify client.")
         print(f"Make sure you have a .env file with SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET")
         print(f"Error details: {e}")
-        return
+        sys.exit(1)
 
     # Verify Kendrick exists
     print("Verifying Kendrick Lamar...")
     kendrick = client.search_artist("Kendrick Lamar")
     if not kendrick:
         print("Error: Could not find Kendrick Lamar on Spotify!")
-        return
+        sys.exit(1)
 
     print(f"Found: {kendrick['name']} (ID: {kendrick['id']})")
 
@@ -319,4 +321,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"\nFATAL: rebuild failed with an unhandled error: {e}")
+        raise
