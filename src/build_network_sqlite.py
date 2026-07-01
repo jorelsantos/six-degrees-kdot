@@ -235,6 +235,12 @@ def main():
              "(required for unattended/background runs; skips the y/n prompt)."
     )
     parser.add_argument(
+        "--resume", action="store_true",
+        help="Keep existing network data and continue crawling non-interactively "
+             "(skips the y/n prompt without wiping progress; already-crawled "
+             "artists are skipped via the `crawled` marker)."
+    )
+    parser.add_argument(
         "--depth", type=int, default=2,
         help="Degrees of separation to crawl from the starting artist (default: 2)."
     )
@@ -261,20 +267,23 @@ def main():
 
         if args.fresh:
             response = 'y'
+        elif args.resume:
+            print("Resuming: keeping existing data, continuing to crawl unprocessed artists.")
+            response = 'n'
         else:
             response = input("\nRebuild from scratch? (y/n): ").strip().lower()
 
-        if response != 'y':
+        if response == 'y':
+            # Clear existing data
+            print("Clearing existing data...")
+            with db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM songs")
+                cursor.execute("DELETE FROM collaborations")
+                cursor.execute("DELETE FROM artists")
+        elif not args.resume:
             print("Keeping existing database. Exiting.")
             return
-
-        # Clear existing data
-        print("Clearing existing data...")
-        with db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM songs")
-            cursor.execute("DELETE FROM collaborations")
-            cursor.execute("DELETE FROM artists")
 
     if args.fresh:
         # Clear the JSON API-response cache too, so a fresh rebuild can't
