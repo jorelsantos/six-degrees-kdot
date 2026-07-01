@@ -103,8 +103,10 @@ class RateLimiter:
 
 
 # Global rate limiter instance (shared across threads)
-# Conservative settings to avoid triggering Spotify's aggressive rate limiting
-_rate_limiter = RateLimiter(max_requests=50, window_seconds=30)
+# Lowered 2026-07-01 from 50 to 20: Spotify does not publish an exact rate
+# limit, and 50 req/30s triggered a ~9.8 hour penalty (Retry-After: 35268s)
+# during sustained crawling. This is a safety margin, not a proven-safe number.
+_rate_limiter = RateLimiter(max_requests=20, window_seconds=30)
 
 
 def get_rate_limiter() -> RateLimiter:
