@@ -60,6 +60,17 @@ def process_single_artist(
             return ("", [], 0)
         processed.add(artist_id)
 
+    # Resume support: if this artist was already crawled in a prior (interrupted)
+    # run, skip the live API work entirely and return its existing neighbors.
+    with db_lock:
+        already_crawled = db.is_artist_crawled(artist_id)
+        if already_crawled:
+            artist = db.get_artist(artist_id)
+            neighbors = db.get_artist_neighbors(artist_id)
+    if already_crawled:
+        artist_name = artist['name'] if artist else artist_id
+        return (artist_name, neighbors, len(neighbors))
+
     try:
         # Get artist info
         artist_info = client._make_request(f"/artists/{artist_id}")
@@ -101,6 +112,10 @@ def process_single_artist(
                     db.add_collaboration(artist_id, collab_id, song)
 
                 collaborator_ids.append(collab_id)
+
+            # Mark crawled only after all edges for this artist are recorded,
+            # so a crash mid-processing leaves it correctly un-crawled for retry.
+            db.mark_artist_crawled(artist_id)
 
         return (artist_name, collaborator_ids, len(collaborators))
 
@@ -209,11 +224,25 @@ def build_network(
 
 def main():
     """Main entry point for building the network."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Build the Six Degrees of Kendrick Lamar collaboration network.")
+    parser.add_argument(
+        "--fresh", action="store_true",
+        help="Clear existing network data and rebuild from scratch, non-interactively "
+             "(required for unattended/background runs; skips the y/n prompt)."
+    )
+    parser.add_argument(
+        "--depth", type=int, default=2,
+        help="Degrees of separation to crawl from the starting artist (default: 2)."
+    )
+    args = parser.parse_args()
+
     print("=" * 70)
     print("Six Degrees of Kendrick Lamar - Network Builder (Parallel)")
     print("=" * 70)
-    print("\nThis will build a 2-degree collaboration network starting from Kendrick Lamar.")
-    print("Estimated time: 1-2 minutes (with optimized parallel fetching).\n")
+    print(f"\nThis will build a {args.depth}-degree collaboration network starting from Kendrick Lamar.")
+    print("Estimated time varies with depth and existing progress.\n")
 
     # Initialize database
     db_path = Path(__file__).parent.parent / "data" / "collaboration_network.db"
@@ -227,7 +256,12 @@ def main():
         print(f"\nExisting database found:")
         print(f"  - {stats['total_artists']} artists")
         print(f"  - {stats['total_collaborations']} collaborations")
-        response = input("\nRebuild from scratch? (y/n): ").strip().lower()
+
+        if args.fresh:
+            response = 'y'
+        else:
+            response = input("\nRebuild from scratch? (y/n): ").strip().lower()
+
         if response != 'y':
             print("Keeping existing database. Exiting.")
             return
@@ -265,7 +299,7 @@ def main():
         db=db,
         client=client,
         starting_artist_id=kendrick['id'],
-        depth=2,
+        depth=args.depth,
         max_albums=15,
         max_workers=5  # Reduced from 10 to avoid rate limiting
     )
