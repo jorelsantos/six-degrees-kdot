@@ -166,7 +166,8 @@ class SpotifyAPIClient:
         auth_response = requests.post(
             self.TOKEN_URL,
             data={"grant_type": "client_credentials"},
-            auth=(self.client_id, self.client_secret)
+            auth=(self.client_id, self.client_secret),
+            timeout=30
         )
 
         if auth_response.status_code != 200:
@@ -208,7 +209,7 @@ class SpotifyAPIClient:
                 # Acquire rate limit permission before making request
                 _rate_limiter.acquire()
 
-                response = requests.get(url, headers=headers, params=params)
+                response = requests.get(url, headers=headers, params=params, timeout=30)
 
                 # Handle rate limiting (429)
                 if response.status_code == 429:
