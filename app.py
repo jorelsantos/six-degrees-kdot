@@ -437,7 +437,7 @@ def main():
                 artist = db.get_artist_by_name(artist_name)
 
                 if not artist:
-                    st.error(f"Artist '{artist_name}' not found.")
+                    st.error(f"'{artist_name}' isn't in our network yet.")
                     st.info("Please select an artist from the suggestions above, or try a different search.")
                     return
         else:
