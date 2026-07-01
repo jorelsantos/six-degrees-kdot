@@ -201,19 +201,33 @@ def build_network(
             pending = set(future_to_artist.keys())
             poll_timeout = 90  # seconds to wait for at least one completion
             max_consecutive_stalls = 3  # ~4.5 minutes of zero progress before giving up on this level
+            heartbeat_interval = 30  # seconds between proactive rate-limit budget logs
 
             stall_streak = 0
+            last_heartbeat = time.time()
             while pending:
                 done, pending = wait(pending, timeout=poll_timeout, return_when=FIRST_COMPLETED)
+
+                # Proactive budget heartbeat: log rate-limit usage on a wall-clock
+                # interval regardless of completions, so the log shows real-time
+                # liveness even during a slow-but-healthy patch (not just every
+                # 10 completed artists, which could be arbitrarily far apart).
+                now = time.time()
+                if now - last_heartbeat >= heartbeat_interval:
+                    rate_stats = get_rate_limiter().get_stats()
+                    print(f"  [heartbeat] {rate_stats['requests_in_window']}/{rate_stats['max_requests']} "
+                          f"req/{rate_stats['window_seconds']}s, {len(pending)} artists still pending this level",
+                          flush=True)
+                    last_heartbeat = now
 
                 if not done:
                     stall_streak += 1
                     print(f"  WARNING: no artists completed in the last {poll_timeout}s "
                           f"({len(pending)} still pending; stall {stall_streak}/{max_consecutive_stalls}) "
-                          f"-- a worker may be stuck on a hung connection.")
+                          f"-- a worker may be stuck on a hung connection.", flush=True)
                     if stall_streak >= max_consecutive_stalls:
                         print(f"  Giving up on {len(pending)} stuck artist(s) for this level; "
-                              f"they remain uncrawled and will be retried on the next --resume run.")
+                              f"they remain uncrawled and will be retried on the next --resume run.", flush=True)
                         break
                     continue
 
