@@ -1,6 +1,7 @@
 """Debug script to see which albums are being analyzed"""
 import sys
-sys.path.insert(0, 'src')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from data_fetcher import get_spotify_client
 from collections import Counter
 

@@ -1,7 +1,7 @@
 [theme]
 base = "dark"
-primaryColor = "#DC143C"  # Kendrick DAMN. red
-backgroundColor = "#0A0A0A"  # Deep black
-secondaryBackgroundColor = "#1A1A1A"  # Subtle dark gray
-textColor = "#F5F5F5"  # Off-white
+primaryColor = "#1DB954"  # Spotify green
+backgroundColor = "#121212"  # Spotify background
+secondaryBackgroundColor = "#181818"  # Spotify card background
+textColor = "#FFFFFF"  # Pure white
 font = "sans serif"

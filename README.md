@@ -1,326 +1,129 @@
-# Six Degrees of Kendrick Lamar: Music Collaboration Network Analyzer
+# Six Degrees of Kendrick Lamar
 
-## Project Overview
-An interactive CLI application that finds the shortest path between any artist and Kendrick Lamar, showing their degrees of separation and the specific songs that connect them. Built with Python, NetworkX, and the Spotify API.
+A Streamlit web app that finds the shortest collaboration path between any artist and Kendrick Lamar — degrees of separation, the connecting path, and the specific songs at each step. Built with Python, SQLite, and the Spotify API, styled after the Spotify UI.
 
 Inspired by "Six Degrees of Kevin Bacon," this project explores how artists in hip-hop and music are connected through their collaborations.
 
+> **Project history:** this started as a University of Michigan SI 507 course final project (a terminal CLI app). The original course writeup is archived at [`docs/archive/`](docs/archive/). The app has since been rebuilt as a Streamlit web app on a SQLite-backed graph — this README reflects the current app, not the original CLI.
+
 ## How It Works
+
 1. **Enter any artist name** (e.g., "Drake", "SZA", "Taylor Swift")
 2. **Get instant results** showing:
    - Degrees of separation from Kendrick Lamar
    - The connection path (Artist A → Artist B → Kendrick)
-   - Specific songs they collaborated on at each step
+   - The specific songs they collaborated on at each step, with Spotify preview playback where available
 
-## Quick Start (TL;DR)
+## Quick Start
 
 ```bash
-# 1. Install (~1 minute)
+# 1. Clone and install
 git clone https://github.com/jorelsantos-um/six-degrees-kdot.git
 cd six-degrees-kdot
 pip install -r requirements.txt
 
-# 2. Get Spotify credentials (~2-3 minutes)
-# Visit https://developer.spotify.com/dashboard
-# Create app, copy Client ID and Client Secret
+# 2. Get Spotify API credentials
+# Visit https://developer.spotify.com/dashboard, create an app,
+# copy the Client ID and Client Secret
 
-# 3. Create .env file
+# 3. Create your .env file
 cp .env.example .env
 # Edit .env with your credentials
 
-# 4. Build network (⏱️ 10-15 minutes - ONLY FIRST TIME!)
-python3 src/network_builder.py
-
-# 5. Run!
-python3 main.py
+# 4. Run the app
+streamlit run app.py
 ```
 
-**Total setup time:** ~15-20 minutes (mostly waiting for network to build)
+The repo ships with a pre-built `data/collaboration_network.db` (~27k artists), so the app works immediately after setup — no separate network-build step required for a fresh clone. Spotify credentials are still needed for live artist search and audio previews.
+
+## Rebuilding the Network (Optional)
+
+If you want to rebuild or expand the collaboration network from scratch:
+
+```bash
+python3 src/build_network_sqlite.py
+```
+
+This crawls outward from Kendrick Lamar via the Spotify API and repopulates `data/collaboration_network.db`. It uses parallel requests and rate limiting, but can still take a while depending on the configured depth — only needed if you want a fresh or deeper network than the one already in the repo.
 
 ## Features
 
 ### Shortest Path Finding
-- Uses breadth-first search to find the shortest connection between any two artists
-- Shows exact collaboration songs at each step in the path
-- Handles artists not in the network by dynamically expanding it
-
-### Smart Network Building
-- Pre-builds a 2-degree collaboration network from Kendrick Lamar
-- Analyzes artists' albums to discover collaborations
-- Caches data to minimize API calls and improve performance
-- Automatically expands when searching for new artists
+- Breadth-first search over the collaboration graph to find the shortest connection between any two artists
+- Shows exact collaboration songs at each step, with inline Spotify audio previews
+- Falls back to live Spotify search for artists not yet in the pre-built network
 
 ### Data Quality
 - Includes both primary albums and guest features
 - Smart track filtering for guest appearances
 - Prioritizes studio albums over singles
-- Eliminates duplicate collaborators (case-insensitive)
-- Validates and caches all Spotify API responses
+- Deduplicates collaborators case-insensitively
+- Caches all Spotify API responses locally to minimize repeat API calls
 
-## Network Representation
-- **Nodes**: Artists with metadata (name, ID, popularity, genres)
+## Architecture
+
+- **`app.py`** — Streamlit web app (entry point). Loads the SQLite database, runs path lookups, and renders the Spotify-styled UI.
+- **`src/database.py`** — SQLite schema and query layer for the collaboration graph.
+- **`src/path_finder_sqlite.py`** — BFS shortest-path logic over the SQLite-backed graph.
+- **`src/build_network_sqlite.py`** — Crawls the Spotify API to build/expand `data/collaboration_network.db`.
+- **`src/data_fetcher.py`** — Spotify API client, OAuth handling, and local JSON response caching.
+- **`scripts/debug_albums.py`** — Standalone dev utility for inspecting which albums/tracks are being analyzed for a given artist.
+
+### Data Model
+- **Nodes**: Artists with metadata (name, Spotify ID, popularity, genres)
 - **Edges**: Collaborations between artists
-- **Edge Attributes**: List of songs they collaborated on
+- **Edge Attributes**: Songs they collaborated on
 
 ## Requirements
+
 - Python 3.7+
 - Spotify API credentials (free)
-- Dependencies: `networkx`, `requests`, `python-dotenv`
-
-## Getting Started
-
-### 1. Clone and Install (⏱️ ~1 minute)
-```bash
-git clone https://github.com/jorelsantos-um/six-degrees-kdot.git
-cd six-degrees-kdot
-pip install -r requirements.txt  # Installs networkx, requests, python-dotenv
-```
-
-### 2. Get Spotify API Credentials (⏱️ ~2-3 minutes)
-1. Go to https://developer.spotify.com/dashboard
-2. Log in with your Spotify account (create one if needed)
-3. Click **"Create App"**
-4. Fill in:
-   - App name: "Six Degrees of Kendrick Lamar" (or any name)
-   - App description: "SI 507 Final Project"
-   - Redirect URI: `http://localhost`
-5. Click **"Create"**
-6. Copy your **Client ID** and **Client Secret** (click "Show Client Secret")
-
-### 3. Create .env File
-```bash
-cp .env.example .env
-# Edit .env with your actual credentials:
-SPOTIFY_CLIENT_ID=your_client_id_here
-SPOTIFY_CLIENT_SECRET=your_client_secret_here
-```
-
-### 4. Build the Network (⏱️ 10-15 minutes - FIRST TIME ONLY)
-```bash
-python3 src/network_builder.py
-```
-
-⚠️ **IMPORTANT:** This step takes 10-15 minutes! The app makes many API calls to build a 2-degree collaboration network from Kendrick Lamar. This is **normal** and only needs to be done once. The network is saved and reused for all future searches.
-
-### 5. Run the Application (⏱️ Instant if network already built)
-```bash
-python3 main.py
-```
-
-Once the network is built, the app starts instantly and searches are nearly immediate!
-
-## Usage
-
-### Example 1: Direct Collaboration (1 Degree)
-```
-Enter artist name (or 'quit' to exit): Drake
-✓ Found: Drake
-
-⚡ 1 degree of separation
-
-PATH:
-Drake → Kendrick Lamar
-
-CONNECTIONS:
-1. Drake & Kendrick Lamar
-   • Poetic Justice
-   • Buried Alive Interlude
-   ... and 1 more
-
-Enter artist name (or 'quit' to exit):
-```
-
-### Example 2: Two Degrees of Separation
-```
-Enter artist name (or 'quit' to exit): Travis Scott
-✓ Found: Travis Scott
-
-⚡ 2 degrees of separation
-
-PATH:
-Travis Scott → SZA → Kendrick Lamar
-
-CONNECTIONS:
-1. Travis Scott & SZA
-   • Love Galore
-
-2. SZA & Kendrick Lamar
-   • All The Stars
-   • Doves in the Wind
-   ... and 1 more
-
-Enter artist name (or 'quit' to exit):
-```
-
-### No Connection Found
-```
-Enter artist name (or 'quit' to exit): Frank Sinatra
-✓ Found: Frank Sinatra
-No path that we know of.
-```
-
-Type `quit` or `exit` to leave the application.
+- Dependencies: `requests`, `python-dotenv`, `streamlit` (see `requirements.txt`)
 
 ## Troubleshooting
 
 ### "Authentication error" / "Could not connect to Spotify API"
-**Problem:** Spotify API credentials are missing or invalid
-
-**Solutions:**
-1. Check that `.env` file exists in the project root directory
-2. Verify credentials are correct (no extra spaces, quotes, or line breaks)
-3. Make sure you copied BOTH `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`
-4. Try regenerating credentials in the Spotify Developer Dashboard
-5. Ensure your Spotify app is not in restricted/quota exceeded mode
-
-### "No saved network found" message
-**Problem:** Network hasn't been built yet
-
-**Solutions:**
-- Run `python3 src/network_builder.py` first (takes 10-15 minutes)
-- Or type `yes` when the app prompts you to build the network
-- Check that `data/collaboration_network.pkl` file exists after building
-
-### Network building takes too long / times out / fails
-**Problem:** Slow internet, API rate limiting, or connection issues
-
-**Solutions:**
-- Ensure you have a stable internet connection
-- Wait a few minutes if you hit rate limits - the app will retry automatically
-- If it fails partway through, you can restart - cached data is preserved
-- Network building progress is saved in `data/` folder as JSON files
-
-### "Could not find artist" / "Could not find '[artist name]'"
-**Problem:** Artist name spelling, artist not on Spotify, or search issue
-
-**Solutions:**
-- Check spelling carefully (try the artist's full legal name)
-- Try alternate spellings or stage names
-- Verify the artist exists on Spotify by searching there first
-- Some very obscure artists may not be in Spotify's database
+- Check that `.env` exists in the project root and both `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are set correctly (no extra spaces/quotes)
+- Regenerate credentials in the Spotify Developer Dashboard if needed
 
 ### "No path that we know of"
-**Problem:** Artist genuinely not connected to Kendrick within the network
+- Expected for artists genuinely disconnected from Kendrick within the current network (different eras/genres), or for artists not yet in the pre-built network and not discoverable via live fallback lookup
 
-**Solutions:**
-- This is **expected behavior** for artists from very different eras or genres
-- Example: Frank Sinatra (died 1998) has no connection to Kendrick
-- Example: Classical composers or artists from completely different musical universes
-- The app will attempt 2-degree network expansion, but some artists truly aren't connected
-- This is a feature, not a bug - it correctly identifies when no path exists
-
-### Python version errors / "SyntaxError" / Module not found
-**Problem:** Using incompatible Python version or missing dependencies
-
-**Solutions:**
-- Ensure Python 3.7 or higher is installed: `python3 --version`
-- Use `python3` command instead of `python`
+### Module not found / import errors
+- Make sure you're running `streamlit run app.py` from the repo root
 - Reinstall dependencies: `pip install -r requirements.txt`
-- On some systems, use `pip3` instead of `pip`
-
-### "Permission denied" or file access errors
-**Problem:** Insufficient permissions to create files in `data/` directory
-
-**Solutions:**
-- Make sure you have write permissions in the project directory
-- Try running from your home directory or a location you own
-- Check that `data/` folder exists and is writable
 
 ## Project Structure
+
 ```
 six-degrees-kdot/
-├── main.py                          # Main interactive application
+├── app.py                          # Streamlit app (entry point)
+├── requirements.txt
 ├── src/
 │   ├── data_fetcher.py             # Spotify API client & caching
-│   ├── network_builder.py          # Graph building with NetworkX
-│   └── path_finder.py              # Shortest path algorithms
+│   ├── database.py                 # SQLite schema/query layer
+│   ├── build_network_sqlite.py     # Network builder (Spotify API -> SQLite)
+│   └── path_finder_sqlite.py       # Shortest path (BFS) over SQLite graph
+├── scripts/
+│   └── debug_albums.py             # Dev utility
 ├── data/
-│   ├── collaboration_network.pkl   # Saved network graph
-│   └── *.json                      # Cached API responses
-├── requirements.txt                # Python dependencies
-└── README.md                       # This file
+│   ├── collaboration_network.db    # Pre-built collaboration graph (tracked in git)
+│   └── *.json                      # Cached Spotify API responses (gitignored)
+├── sessions/                        # Dated work-session logs
+└── docs/
+    ├── ROADMAP.md                  # Scoped near-term feature roadmap
+    └── archive/                    # Original SI 507 course artifacts
 ```
 
 ## Data Sources
 
-This project uses data from the Spotify Web API to collect information about artists, albums, tracks, and collaborations.
-
 | Data Source | URL | Description |
 |-------------|-----|-------------|
-| Spotify Web API | https://developer.spotify.com/documentation/web-api | Official Spotify REST API providing access to music catalog data including artists, albums, tracks, and audio features |
+| Spotify Web API | https://developer.spotify.com/documentation/web-api | Official Spotify REST API — artists, albums, tracks, and audio previews |
 
 **Authentication**: OAuth 2.0 Client Credentials flow
-**Base URL**: `https://api.spotify.com/v1/`
+**Caching**: API responses cached as JSON files in `data/`, keyed by MD5 hash of the endpoint URL, with a 7-day expiration
 
-## Data Access Techniques
+## What's Next
 
-This project uses the following techniques to access and manage data:
-
-### 1. OAuth 2.0 Authentication
-- **Client Credentials flow** for application-level access
-- Access tokens are automatically refreshed when expired
-- Credentials stored securely in `.env` file (not committed to git)
-
-### 2. REST API Calls
-- HTTP GET requests to Spotify Web API endpoints
-- **Endpoints used**:
-  - `/v1/search` - Search for artists by name
-  - `/v1/artists/{id}` - Get artist metadata
-  - `/v1/artists/{id}/albums` - Get artist's discography
-  - `/v1/albums/{id}/tracks` - Get tracks from an album
-- JSON response parsing for all data
-- Error handling with retry logic for rate limits
-
-### 3. Caching Strategy
-- All API responses cached as **JSON files** in `data/` directory
-- **Cache key**: MD5 hash of the API endpoint URL
-- **Cache expiration**: 7 days (604800 seconds)
-- Cache hit avoids unnecessary API calls, improving performance
-- Cache miss triggers new API request and updates cache file
-- Example: `get_artist_albums()` checks cache before calling API
-
-### 4. Data Persistence
-- Network graph saved as **pickle file** (`collaboration_network.pkl`)
-- Allows instant loading without rebuilding 10-15 minute network
-- Graph contains all nodes, edges, and attributes in NetworkX format
-
-## Data Summary
-
-The application stores and processes the following data structures:
-
-### Artist Data (Nodes in Network Graph)
-- **id**: Spotify unique artist identifier (string)
-- **name**: Artist display name (string)
-- **popularity**: Spotify popularity score 0-100 (integer)
-- **genres**: List of associated genres (list of strings)
-- **followers**: Total follower count (integer, optional)
-
-### Album Data (Used for Collaboration Discovery)
-- **id**: Spotify unique album identifier (string)
-- **name**: Album title (string)
-- **release_date**: Album release date (string, YYYY-MM-DD)
-- **album_type**: Type of release - "album", "single", or "compilation" (string)
-- **total_tracks**: Number of tracks on album (integer)
-- **is_primary_artist**: Whether artist is primary owner vs. guest (boolean)
-
-### Track Data (Used to Identify Collaborations)
-- **id**: Spotify unique track identifier (string)
-- **name**: Track title (string)
-- **artists**: List of all artists credited on track (list of artist objects)
-- **duration_ms**: Track length in milliseconds (integer)
-- **track_number**: Position on album (integer)
-
-### Collaboration Data (Edges in Network Graph)
-- **source_artist**: Starting artist node ID (string)
-- **target_artist**: Ending artist node ID (string)
-- **songs**: List of track names they collaborated on (list of strings)
-- **weight**: Number of collaborations (integer, implicit from songs list length)
-
-### Network Graph Statistics
-- **total_artists**: Total number of artist nodes in graph (integer)
-- **total_collaborations**: Total number of collaboration edges (integer)
-- **average_collaborators**: Mean number of collaborators per artist (float)
-- **degrees_from_kendrick**: Maximum path length in network (integer)
-
-## Course Information
-SI 507 Final Project
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the current, intentionally short list of planned next features.

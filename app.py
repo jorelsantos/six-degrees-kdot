@@ -87,30 +87,36 @@ def search_track_preview(song_name: str, artist_names: list, spotify_client) -> 
     return None
 
 
-def get_artist_image_url(artist_name: str) -> str:
-    """Generate a placeholder image URL for an artist using UI Avatars."""
-    # Use initials for the avatar
-    import urllib.parse
-    name_parts = artist_name.split()
-    initials = ''.join([part[0].upper() for part in name_parts[:2]])
-    # UI Avatars with custom colors (Kendrick red theme)
-    bg_color = "DC143C"  # Crimson red
-    text_color = "FFFFFF"  # White
-    return f"https://ui-avatars.com/api/?name={urllib.parse.quote(artist_name)}&size=200&background={bg_color}&color={text_color}&bold=true&font-size=0.4"
-
-
 def display_artist_card(artist_name: str, artist_id: str):
-    """Display an artist card with image and name."""
-    image_url = get_artist_image_url(artist_name)
-
+    """Display an artist card in Spotify style - clean, modern, professional."""
     st.markdown(f"""
-        <div style="text-align: center; padding: 1rem;">
-            <img src="{image_url}"
-                 style="border-radius: 12px; width: 120px; height: 120px; object-fit: cover; box-shadow: 0 4px 6px rgba(0,0,0,0.3);"
-                 alt="{artist_name}">
-            <div style="margin-top: 0.75rem; font-weight: 600; font-size: 1.1rem;">
+        <div style="
+            background: #181818;
+            border-radius: 12px;
+            padding: 32px;
+            margin: 24px auto;
+            max-width: 500px;
+            text-align: center;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            border: 2px solid #1DB954;
+            transition: transform 0.2s;
+        ">
+            <div style="
+                font-size: 2rem;
+                font-weight: 900;
+                color: #FFFFFF;
+                letter-spacing: -0.02em;
+                margin-bottom: 8px;
+            ">
                 {artist_name}
             </div>
+            <div style="
+                width: 40px;
+                height: 3px;
+                background: #1DB954;
+                margin: 0 auto;
+                border-radius: 2px;
+            "></div>
         </div>
     """, unsafe_allow_html=True)
 
@@ -119,16 +125,62 @@ def display_path(connection: dict, spotify_client=None):
     """Display the connection path with artist cards and songs."""
     degrees = connection['degrees']
 
-    # Degrees header
+    # Degrees header - Spotify style
     if degrees == 0:
-        st.success("🎤 That's Kendrick Lamar himself!")
+        st.markdown("""
+            <div style="
+                text-align: center;
+                padding: 24px;
+                background: linear-gradient(135deg, rgba(29, 185, 84, 0.2), rgba(29, 185, 84, 0.05));
+                border-radius: 12px;
+                border: 2px solid #1DB954;
+                margin-bottom: 32px;
+            ">
+                <div style="font-size: 2rem; margin-bottom: 8px;">🎤</div>
+                <div style="font-size: 1.25rem; font-weight: 700; color: #1DB954;">
+                    That's Kendrick Lamar himself!
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
     elif degrees == 1:
-        st.success(f"🔥 **{degrees} degree** of separation!")
+        st.markdown(f"""
+            <div style="
+                text-align: center;
+                padding: 24px;
+                background: linear-gradient(135deg, rgba(29, 185, 84, 0.2), rgba(29, 185, 84, 0.05));
+                border-radius: 12px;
+                border: 2px solid #1DB954;
+                margin-bottom: 32px;
+            ">
+                <div style="font-size: 2rem; margin-bottom: 8px;">🔥</div>
+                <div style="font-size: 1.5rem; font-weight: 900; color: #FFFFFF;">
+                    {degrees} Degree
+                </div>
+                <div style="font-size: 1rem; color: #B3B3B3; margin-top: 4px;">
+                    of separation
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
     else:
-        st.success(f"🔥 **{degrees} degrees** of separation!")
+        st.markdown(f"""
+            <div style="
+                text-align: center;
+                padding: 24px;
+                background: linear-gradient(135deg, rgba(29, 185, 84, 0.2), rgba(29, 185, 84, 0.05));
+                border-radius: 12px;
+                border: 2px solid #1DB954;
+                margin-bottom: 32px;
+            ">
+                <div style="font-size: 2rem; margin-bottom: 8px;">🔥</div>
+                <div style="font-size: 1.5rem; font-weight: 900; color: #FFFFFF;">
+                    {degrees} Degrees
+                </div>
+                <div style="font-size: 1rem; color: #B3B3B3; margin-top: 4px;">
+                    of separation
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
 
-    st.markdown("")
-    st.markdown("---")
     st.markdown("")
 
     # Path visualization with cards
@@ -147,47 +199,117 @@ def display_path(connection: dict, spotify_client=None):
             from_artist = conn['from']['name']
             to_artist = conn['to']['name']
 
-            # Arrow and songs container
+            # Spotify-style connection section
             st.markdown(f"""
-                <div style="text-align: center; margin: 1.5rem 0;">
-                    <div style="font-size: 2rem; color: #DC143C; margin-bottom: 0.5rem;">↓</div>
-                    <div style="background: #1A1A1A; padding: 1rem; border-radius: 8px; border-left: 3px solid #DC143C;">
-                        <div style="font-weight: 600; margin-bottom: 0.5rem; color: #DC143C;">
-                            🎵 Connecting Song{"s" if len(songs) > 1 else ""}
+                <div style="margin: 32px auto; max-width: 600px;">
+                    <!-- Collaborated On Header -->
+                    <div style="
+                        text-align: center;
+                        margin-bottom: 24px;
+                    ">
+                        <div style="
+                            display: inline-block;
+                            font-size: 0.875rem;
+                            font-weight: 700;
+                            text-transform: uppercase;
+                            letter-spacing: 0.1em;
+                            color: #1DB954;
+                            background: rgba(29, 185, 84, 0.1);
+                            padding: 8px 24px;
+                            border-radius: 500px;
+                            border: 2px solid #1DB954;
+                        ">
+                            Collaborated On
                         </div>
+                    </div>
+
+                    <!-- Songs Container -->
+                    <div style="
+                        background: #181818;
+                        border-radius: 12px;
+                        padding: 24px;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+                    ">
             """, unsafe_allow_html=True)
 
             # Display songs with preview players
             songs_to_show = songs[:3]  # Show first 3 songs
 
-            for song in songs_to_show:
+            for idx, song in enumerate(songs_to_show):
                 # Try to get preview URL if Spotify client is available
                 preview_url = None
                 if spotify_client:
                     preview_url = search_track_preview(song, [from_artist, to_artist], spotify_client)
 
-                # Display song name
-                st.markdown(f"**•** {song}")
+                # Display song in Spotify track row style
+                st.markdown(f"""
+                    <div style="
+                        padding: 12px 0;
+                        border-bottom: 1px solid #282828;
+                    ">
+                        <div style="
+                            display: flex;
+                            align-items: center;
+                            margin-bottom: 8px;
+                        ">
+                            <span style="
+                                color: #1DB954;
+                                font-weight: 700;
+                                margin-right: 12px;
+                                font-size: 1.1rem;
+                            ">♫</span>
+                            <span style="
+                                color: #FFFFFF;
+                                font-weight: 500;
+                                font-size: 1rem;
+                            ">{song}</span>
+                        </div>
+                """, unsafe_allow_html=True)
 
                 # Add preview player if available
                 if preview_url:
                     st.markdown(f"""
-                        <audio controls style="width: 100%; margin: 0.5rem 0 1rem 0;">
+                        <audio controls style="
+                            width: 100%;
+                            height: 32px;
+                            margin-top: 8px;
+                        ">
                             <source src="{preview_url}" type="audio/mpeg">
                             Your browser does not support the audio element.
                         </audio>
                     """, unsafe_allow_html=True)
 
+                st.markdown("</div>", unsafe_allow_html=True)
+
             if len(songs) > 3:
-                st.markdown(f"*...and {len(songs) - 3} more*")
+                st.markdown(f"""
+                    <div style="
+                        text-align: center;
+                        color: #B3B3B3;
+                        font-size: 0.875rem;
+                        margin-top: 16px;
+                        font-style: italic;
+                    ">
+                        +{len(songs) - 3} more collaboration{"s" if len(songs) - 3 > 1 else ""}
+                    </div>
+                """, unsafe_allow_html=True)
 
             st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 def main():
-    # Custom CSS for Kendrick aesthetic
+    # Custom CSS for Spotify aesthetic
     st.markdown("""
         <style>
+        /* Spotify color variables */
+        :root {
+            --spotify-green: #1DB954;
+            --spotify-black: #121212;
+            --spotify-card: #181818;
+            --spotify-gray: #B3B3B3;
+            --spotify-white: #FFFFFF;
+        }
+
         /* Main title styling */
         h1 {
             font-weight: 900;
@@ -200,17 +322,26 @@ def main():
             border-radius: 8px;
             font-size: 1.1rem;
             padding: 0.75rem;
+            background-color: #181818;
+            border: 1px solid #282828;
         }
 
-        /* Button styling */
+        /* Button styling - Spotify style */
         .stButton button {
-            border-radius: 8px;
-            font-weight: 600;
-            padding: 0.6rem 2rem;
+            border-radius: 500px;
+            font-weight: 700;
+            padding: 0.75rem 2rem;
             transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-size: 0.875rem;
         }
 
-        /* Kendrick aesthetic accents */
+        .stButton button:hover {
+            transform: scale(1.04);
+        }
+
+        /* Spotify aesthetic accents */
         .stMarkdown {
             line-height: 1.6;
         }
@@ -218,6 +349,34 @@ def main():
         /* Clean card styling */
         .element-container {
             margin-bottom: 1rem;
+        }
+
+        /* Audio player styling */
+        audio {
+            filter: brightness(0.9) contrast(1.1);
+            border-radius: 8px;
+        }
+
+        audio::-webkit-media-controls-panel {
+            background-color: #282828;
+        }
+
+        audio::-webkit-media-controls-play-button {
+            background-color: #1DB954;
+            border-radius: 50%;
+        }
+
+        /* Success message styling */
+        .stAlert {
+            border-radius: 8px;
+        }
+
+        /* Divider styling */
+        hr {
+            border: none;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #1DB954, transparent);
+            margin: 2rem 0;
         }
         </style>
     """, unsafe_allow_html=True)
