@@ -274,6 +274,16 @@ def main():
             cursor.execute("DELETE FROM collaborations")
             cursor.execute("DELETE FROM artists")
 
+    if args.fresh:
+        # Clear the JSON API-response cache too, so a fresh rebuild can't
+        # silently reuse responses cached by older (e.g. pre-pagination-fix) code.
+        cache_dir = Path(__file__).parent.parent / "data"
+        cache_files = list(cache_dir.glob("*.json"))
+        if cache_files:
+            print(f"Clearing {len(cache_files)} cached API response file(s)...")
+            for f in cache_files:
+                f.unlink()
+
     # Initialize Spotify client
     print("\nInitializing Spotify client...")
     try:
