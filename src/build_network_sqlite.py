@@ -15,12 +15,12 @@ import time
 import threading
 from pathlib import Path
 from typing import Set, Dict, Any, List, Tuple
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from data_fetcher import SpotifyAPIClient, get_rate_limiter
+from data_fetcher import SpotifyAPIClient, get_rate_limiter, RateLimitPenaltyError
 from database import CollaborationDatabase
 
 
@@ -59,6 +59,17 @@ def process_single_artist(
         if artist_id in processed:
             return ("", [], 0)
         processed.add(artist_id)
+
+    # Resume support: if this artist was already crawled in a prior (interrupted)
+    # run, skip the live API work entirely and return its existing neighbors.
+    with db_lock:
+        already_crawled = db.is_artist_crawled(artist_id)
+        if already_crawled:
+            artist = db.get_artist(artist_id)
+            neighbors = db.get_artist_neighbors(artist_id)
+    if already_crawled:
+        artist_name = artist['name'] if artist else artist_id
+        return (artist_name, neighbors, len(neighbors))
 
     try:
         # Get artist info
@@ -102,8 +113,17 @@ def process_single_artist(
 
                 collaborator_ids.append(collab_id)
 
+            # Mark crawled only after all edges for this artist are recorded,
+            # so a crash mid-processing leaves it correctly un-crawled for retry.
+            db.mark_artist_crawled(artist_id)
+
         return (artist_name, collaborator_ids, len(collaborators))
 
+    except RateLimitPenaltyError:
+        # Do not swallow this as an ordinary per-artist failure -- a large
+        # rate-limit penalty means the whole crawl should stop, not just this
+        # artist. Re-raise so it reaches build_network's collection loop.
+        raise
     except Exception as e:
         print(f"  Error processing artist {artist_id}: {e}")
         return ("", [], 0)
@@ -154,9 +174,18 @@ def build_network(
         next_level: Set[str] = set()
         completed_count = 0
 
-        # Process artists in parallel
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks
+        # Process artists in parallel. A stuck worker (e.g. a socket that never
+        # times out at the OS/library level despite our own timeout= settings)
+        # must not block the whole level indefinitely -- Python threads can't be
+        # force-killed, and ThreadPoolExecutor's own `with`-block shutdown waits
+        # for every submitted task. So this loop bounds total wait time itself:
+        # it polls for completions with a per-wait timeout, and gives up on
+        # whatever's still pending after too many consecutive stalled polls,
+        # moving on to the next level rather than hanging forever. Any
+        # abandoned (never-crawled) artists simply stay eligible for a future
+        # --resume run, since they're never marked `crawled`.
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        try:
             future_to_artist = {
                 executor.submit(
                     process_single_artist,
@@ -169,24 +198,68 @@ def build_network(
                 for artist_id in artists_to_process
             }
 
-            # Collect results as they complete
-            for future in as_completed(future_to_artist):
-                artist_id = future_to_artist[future]
-                try:
-                    artist_name, collaborator_ids, collab_count = future.result()
-                    if artist_name:
-                        completed_count += 1
-                        # Add collaborators to next level
-                        next_level.update(collaborator_ids)
+            pending = set(future_to_artist.keys())
+            poll_timeout = 90  # seconds to wait for at least one completion
+            max_consecutive_stalls = 3  # ~4.5 minutes of zero progress before giving up on this level
+            heartbeat_interval = 30  # seconds between proactive rate-limit budget logs
 
-                        # Progress update every 10 artists
-                        if completed_count % 10 == 0:
-                            rate_stats = get_rate_limiter().get_stats()
-                            print(f"  Processed {completed_count}/{len(artists_to_process)} artists "
-                                  f"(API: {rate_stats['requests_in_window']}/{rate_stats['max_requests']} req/30s)")
+            stall_streak = 0
+            last_heartbeat = time.time()
+            while pending:
+                done, pending = wait(pending, timeout=poll_timeout, return_when=FIRST_COMPLETED)
 
-                except Exception as e:
-                    print(f"  Error with artist {artist_id}: {e}")
+                # Proactive budget heartbeat: log rate-limit usage on a wall-clock
+                # interval regardless of completions, so the log shows real-time
+                # liveness even during a slow-but-healthy patch (not just every
+                # 10 completed artists, which could be arbitrarily far apart).
+                now = time.time()
+                if now - last_heartbeat >= heartbeat_interval:
+                    rate_stats = get_rate_limiter().get_stats()
+                    print(f"  [heartbeat] {rate_stats['requests_in_window']}/{rate_stats['max_requests']} "
+                          f"req/{rate_stats['window_seconds']}s, {len(pending)} artists still pending this level",
+                          flush=True)
+                    last_heartbeat = now
+
+                if not done:
+                    stall_streak += 1
+                    print(f"  WARNING: no artists completed in the last {poll_timeout}s "
+                          f"({len(pending)} still pending; stall {stall_streak}/{max_consecutive_stalls}) "
+                          f"-- a worker may be stuck on a hung connection.", flush=True)
+                    if stall_streak >= max_consecutive_stalls:
+                        print(f"  Giving up on {len(pending)} stuck artist(s) for this level; "
+                              f"they remain uncrawled and will be retried on the next --resume run.", flush=True)
+                        break
+                    continue
+
+                stall_streak = 0
+                for future in done:
+                    artist_id = future_to_artist[future]
+                    try:
+                        artist_name, collaborator_ids, collab_count = future.result()
+                        if artist_name:
+                            completed_count += 1
+                            # Add collaborators to next level
+                            next_level.update(collaborator_ids)
+
+                            # Progress update every 10 artists
+                            if completed_count % 10 == 0:
+                                rate_stats = get_rate_limiter().get_stats()
+                                print(f"  Processed {completed_count}/{len(artists_to_process)} artists "
+                                      f"(API: {rate_stats['requests_in_window']}/{rate_stats['max_requests']} req/30s)")
+
+                    except RateLimitPenaltyError:
+                        # Re-raise past this loop, the `while pending` loop, and the
+                        # `for level` loop -- a large penalty stops the entire
+                        # multi-level crawl, not just this artist or this level.
+                        # The enclosing `finally: executor.shutdown(...)` still runs
+                        # during this unwind before the exception reaches main().
+                        raise
+                    except Exception as e:
+                        print(f"  Error with artist {artist_id}: {e}")
+        finally:
+            # Don't block on any leaked/stuck threads -- cancel unstarted work
+            # and return immediately; abandoned threads die with the process.
+            executor.shutdown(wait=False, cancel_futures=True)
 
         level_time = time.time() - level_start
         print(f"  Level {level + 1} completed in {level_time:.1f} seconds")
@@ -208,12 +281,34 @@ def build_network(
 
 
 def main():
-    """Main entry point for building the network."""
+    """Main entry point for building the network. Exits non-zero on failure
+    so an unattended/background run signals failure clearly rather than
+    silently exiting 0."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Build the Six Degrees of Kendrick Lamar collaboration network.")
+    parser.add_argument(
+        "--fresh", action="store_true",
+        help="Clear existing network data and rebuild from scratch, non-interactively "
+             "(required for unattended/background runs; skips the y/n prompt)."
+    )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Keep existing network data and continue crawling non-interactively "
+             "(skips the y/n prompt without wiping progress; already-crawled "
+             "artists are skipped via the `crawled` marker)."
+    )
+    parser.add_argument(
+        "--depth", type=int, default=2,
+        help="Degrees of separation to crawl from the starting artist (default: 2)."
+    )
+    args = parser.parse_args()
+
     print("=" * 70)
     print("Six Degrees of Kendrick Lamar - Network Builder (Parallel)")
     print("=" * 70)
-    print("\nThis will build a 2-degree collaboration network starting from Kendrick Lamar.")
-    print("Estimated time: 1-2 minutes (with optimized parallel fetching).\n")
+    print(f"\nThis will build a {args.depth}-degree collaboration network starting from Kendrick Lamar.")
+    print("Estimated time varies with depth and existing progress.\n")
 
     # Initialize database
     db_path = Path(__file__).parent.parent / "data" / "collaboration_network.db"
@@ -227,18 +322,36 @@ def main():
         print(f"\nExisting database found:")
         print(f"  - {stats['total_artists']} artists")
         print(f"  - {stats['total_collaborations']} collaborations")
-        response = input("\nRebuild from scratch? (y/n): ").strip().lower()
-        if response != 'y':
+
+        if args.fresh:
+            response = 'y'
+        elif args.resume:
+            print("Resuming: keeping existing data, continuing to crawl unprocessed artists.")
+            response = 'n'
+        else:
+            response = input("\nRebuild from scratch? (y/n): ").strip().lower()
+
+        if response == 'y':
+            # Clear existing data
+            print("Clearing existing data...")
+            with db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM songs")
+                cursor.execute("DELETE FROM collaborations")
+                cursor.execute("DELETE FROM artists")
+        elif not args.resume:
             print("Keeping existing database. Exiting.")
             return
 
-        # Clear existing data
-        print("Clearing existing data...")
-        with db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM songs")
-            cursor.execute("DELETE FROM collaborations")
-            cursor.execute("DELETE FROM artists")
+    if args.fresh:
+        # Clear the JSON API-response cache too, so a fresh rebuild can't
+        # silently reuse responses cached by older (e.g. pre-pagination-fix) code.
+        cache_dir = Path(__file__).parent.parent / "data"
+        cache_files = list(cache_dir.glob("*.json"))
+        if cache_files:
+            print(f"Clearing {len(cache_files)} cached API response file(s)...")
+            for f in cache_files:
+                f.unlink()
 
     # Initialize Spotify client
     print("\nInitializing Spotify client...")
@@ -248,14 +361,14 @@ def main():
         print(f"\nError: Could not initialize Spotify client.")
         print(f"Make sure you have a .env file with SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET")
         print(f"Error details: {e}")
-        return
+        sys.exit(1)
 
     # Verify Kendrick exists
     print("Verifying Kendrick Lamar...")
     kendrick = client.search_artist("Kendrick Lamar")
     if not kendrick:
         print("Error: Could not find Kendrick Lamar on Spotify!")
-        return
+        sys.exit(1)
 
     print(f"Found: {kendrick['name']} (ID: {kendrick['id']})")
 
@@ -265,7 +378,7 @@ def main():
         db=db,
         client=client,
         starting_artist_id=kendrick['id'],
-        depth=2,
+        depth=args.depth,
         max_albums=15,
         max_workers=5  # Reduced from 10 to avoid rate limiting
     )
@@ -275,4 +388,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"\nFATAL: rebuild failed with an unhandled error: {e}")
+        raise

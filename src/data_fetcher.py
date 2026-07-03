@@ -16,8 +16,26 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from collections import deque
 
+import socket
 import requests
 from dotenv import load_dotenv
+
+# Force IPv4-only DNS resolution for all `requests` calls in this process.
+# Diagnosed 2026-07-01: repeated multi-hour stalls showed live TCP connections
+# to Spotify's API stuck ESTABLISHED with zero data flow, exclusively over
+# IPv6 (confirmed via `lsof`), despite correct timeout= handling verified
+# against a synthetic black-hole IPv4 address. IPv6 path black-holing (a
+# connection that establishes but silently drops one direction) is a known
+# class of real-world network fault that can evade a socket-level read
+# timeout in rare cases. Forcing IPv4 avoids the affected path entirely.
+_original_getaddrinfo = socket.getaddrinfo
+
+
+def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return _original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+
+socket.getaddrinfo = _ipv4_only_getaddrinfo
 
 
 class RateLimiter:
@@ -85,8 +103,10 @@ class RateLimiter:
 
 
 # Global rate limiter instance (shared across threads)
-# Conservative settings to avoid triggering Spotify's aggressive rate limiting
-_rate_limiter = RateLimiter(max_requests=50, window_seconds=30)
+# Lowered 2026-07-01 from 50 to 20: Spotify does not publish an exact rate
+# limit, and 50 req/30s triggered a ~9.8 hour penalty (Retry-After: 35268s)
+# during sustained crawling. This is a safety margin, not a proven-safe number.
+_rate_limiter = RateLimiter(max_requests=20, window_seconds=30)
 
 
 def get_rate_limiter() -> RateLimiter:
@@ -103,6 +123,19 @@ class SpotifyAPIError(Exception):
 class AuthenticationError(SpotifyAPIError):
     """Exception raised for authentication failures"""
     pass
+
+
+class RateLimitPenaltyError(SpotifyAPIError):
+    """
+    Raised when Spotify returns a Retry-After exceeding the inline retry cap
+    (see _make_request). Distinct from SpotifyAPIError so callers can
+    selectively re-raise it past broad `except Exception` handlers instead
+    of treating it as an ordinary per-request failure -- a large penalty
+    means the whole crawl should stop, not just the current request.
+    """
+    def __init__(self, retry_after: int, message: str = None):
+        self.retry_after = retry_after
+        super().__init__(message or f"Rate limited with Retry-After={retry_after}s")
 
 
 class SpotifyAPIClient:
@@ -166,7 +199,8 @@ class SpotifyAPIClient:
         auth_response = requests.post(
             self.TOKEN_URL,
             data={"grant_type": "client_credentials"},
-            auth=(self.client_id, self.client_secret)
+            auth=(self.client_id, self.client_secret),
+            timeout=30
         )
 
         if auth_response.status_code != 200:
@@ -208,12 +242,25 @@ class SpotifyAPIClient:
                 # Acquire rate limit permission before making request
                 _rate_limiter.acquire()
 
-                response = requests.get(url, headers=headers, params=params)
+                response = requests.get(url, headers=headers, params=params, timeout=30)
 
                 # Handle rate limiting (429)
                 if response.status_code == 429:
                     retry_after = int(response.headers.get("Retry-After", 1))
-                    print(f"Rate limited. Waiting {retry_after} seconds...")
+                    # Diagnosed 2026-07-01: a large Retry-After (Spotify has been
+                    # observed returning multi-hour values under sustained load)
+                    # previously caused a blind time.sleep() that was indistinguishable
+                    # from a hung/frozen process for hours. Cap the in-loop wait and
+                    # fail loudly instead of silently absorbing an unbounded delay.
+                    max_inline_wait = 60
+                    if retry_after > max_inline_wait:
+                        raise RateLimitPenaltyError(
+                            retry_after,
+                            f"Rate limited with Retry-After={retry_after}s (> {max_inline_wait}s cap). "
+                            f"Spotify is asking us to back off significantly -- not retrying inline. "
+                            f"Wait at least {retry_after}s before the next attempt (via --resume)."
+                        )
+                    print(f"Rate limited. Waiting {retry_after} seconds...", flush=True)
                     time.sleep(retry_after)
                     continue
 

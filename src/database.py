@@ -58,9 +58,16 @@ class CollaborationDatabase:
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     popularity INTEGER DEFAULT 0,
-                    genres TEXT DEFAULT '[]'
+                    genres TEXT DEFAULT '[]',
+                    crawled INTEGER DEFAULT 0
                 )
             """)
+
+            # Migration guard: add `crawled` to databases created before this column existed.
+            cursor.execute("PRAGMA table_info(artists)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+            if "crawled" not in existing_columns:
+                cursor.execute("ALTER TABLE artists ADD COLUMN crawled INTEGER DEFAULT 0")
 
             # Collaborations table (edges)
             cursor.execute("""
@@ -120,6 +127,63 @@ class CollaborationDatabase:
                 INSERT OR IGNORE INTO artists (id, name, popularity, genres)
                 VALUES (?, ?, ?, ?)
             """, (artist_id, name, popularity, json.dumps(genres)))
+
+    def mark_artist_crawled(self, artist_id: str) -> None:
+        """
+        Mark an artist as having had their own albums/collaborators crawled.
+
+        This is the only reliable signal for resumability: the collaborations
+        table stores undirected edges, so a crawled artist and one merely
+        discovered as someone else's collaborator are otherwise indistinguishable.
+
+        Args:
+            artist_id: Spotify artist ID
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE artists SET crawled = 1 WHERE id = ?
+            """, (artist_id,))
+
+    def is_artist_crawled(self, artist_id: str) -> bool:
+        """
+        Check whether an artist has already been crawled (own albums processed).
+
+        Args:
+            artist_id: Spotify artist ID
+
+        Returns:
+            True if the artist exists and is marked crawled, False otherwise
+            (including if the artist isn't in the database at all).
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT crawled FROM artists WHERE id = ?", (artist_id,))
+            row = cursor.fetchone()
+            return bool(row and row["crawled"])
+
+    def get_artist_neighbors(self, artist_id: str) -> List[str]:
+        """
+        Get an artist's collaborator IDs directly from stored edges, without
+        a live API call. Used to resume a rebuild for artists already crawled.
+
+        Args:
+            artist_id: Spotify artist ID
+
+        Returns:
+            List of neighboring artist IDs (collaborators in either edge direction)
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT artist1_id, artist2_id FROM collaborations
+                WHERE artist1_id = ? OR artist2_id = ?
+            """, (artist_id, artist_id))
+            neighbors = []
+            for row in cursor.fetchall():
+                other = row["artist2_id"] if row["artist1_id"] == artist_id else row["artist1_id"]
+                neighbors.append(other)
+            return neighbors
 
     def add_collaboration(self, artist1_id: str, artist2_id: str,
                           song_name: str) -> None:
