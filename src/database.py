@@ -101,6 +101,20 @@ class CollaborationDatabase:
             if "collaborators" not in song_cols:
                 cursor.execute("ALTER TABLE songs ADD COLUMN collaborators TEXT DEFAULT '[]'")
 
+            # Artist aliases (alternate names -> canonical artist node). One row
+            # per (artist, alias); lets a search for "Kanye West" resolve to the
+            # canonical "Ye" node. Populated only by the MusicBrainz build; the
+            # legacy Spotify DB simply has an empty table (CREATE IF NOT EXISTS),
+            # so both DBs load under one schema and alias lookups no-op there.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS artist_aliases (
+                    artist_id TEXT NOT NULL,
+                    alias TEXT NOT NULL,
+                    FOREIGN KEY (artist_id) REFERENCES artists(id),
+                    UNIQUE(artist_id, alias)
+                )
+            """)
+
             # Indexes for faster queries
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_collab_artist1
@@ -117,6 +131,10 @@ class CollaborationDatabase:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_artist_name
                 ON artists(name COLLATE NOCASE)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_alias_name
+                ON artist_aliases(alias COLLATE NOCASE)
             """)
 
     def add_artist(self, artist_id: str, name: str,
@@ -137,6 +155,37 @@ class CollaborationDatabase:
                 INSERT OR IGNORE INTO artists (id, name, popularity, genres)
                 VALUES (?, ?, ?, ?)
             """, (artist_id, name, popularity, json.dumps(genres)))
+
+    def add_artist_alias(self, artist_id: str, alias: str) -> None:
+        """
+        Register an alternate name for an artist (so a search by that name
+        resolves to this canonical node). Idempotent; skips aliases that are
+        blank or identical to the canonical display name.
+
+        Args:
+            artist_id: Canonical artist id (MBID) the alias points to
+            alias: The alternate name string
+        """
+        if not alias or not alias.strip():
+            return
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR IGNORE INTO artist_aliases (artist_id, alias)
+                VALUES (?, ?)
+            """, (artist_id, alias.strip()))
+
+    def add_artist_aliases(self, artist_id: str, aliases: List[str]) -> None:
+        """Bulk variant of add_artist_alias for one artist."""
+        rows = [(artist_id, a.strip()) for a in (aliases or []) if a and a.strip()]
+        if not rows:
+            return
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany("""
+                INSERT OR IGNORE INTO artist_aliases (artist_id, alias)
+                VALUES (?, ?)
+            """, rows)
 
     def mark_artist_crawled(self, artist_id: str) -> None:
         """
@@ -291,6 +340,26 @@ class CollaborationDatabase:
                     'popularity': row['popularity'],
                     'genres': json.loads(row['genres'])
                 }
+
+            # Fall back to an exact alias match (e.g. "Kanye West" -> "Ye"),
+            # resolving to the canonical artist node. Prefer the more popular
+            # artist when an alias is shared by several.
+            cursor.execute("""
+                SELECT a.id, a.name, a.popularity, a.genres
+                FROM artist_aliases al
+                JOIN artists a ON a.id = al.artist_id
+                WHERE al.alias = ? COLLATE NOCASE
+                ORDER BY a.popularity DESC
+                LIMIT 1
+            """, (name,))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'id': row['id'],
+                    'name': row['name'],
+                    'popularity': row['popularity'],
+                    'genres': json.loads(row['genres'])
+                }
             return None
 
     def search_artists(self, query: str, limit: int = 10) -> List[Dict]:
@@ -306,13 +375,21 @@ class CollaborationDatabase:
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            # Match on the canonical name OR any alias, but return one row per
+            # canonical artist (DISTINCT by id) so "Kanye" surfaces "Ye" once,
+            # never a separate alias row. The alias join is a LEFT JOIN so the
+            # legacy Spotify DB (no aliases) behaves exactly as before.
+            like = f"%{query}%"
             cursor.execute("""
-                SELECT id, name, popularity, genres
-                FROM artists
-                WHERE name LIKE ? COLLATE NOCASE
-                ORDER BY popularity DESC
+                SELECT a.id, a.name, a.popularity, a.genres
+                FROM artists a
+                LEFT JOIN artist_aliases al ON al.artist_id = a.id
+                WHERE a.name LIKE ? COLLATE NOCASE
+                   OR al.alias LIKE ? COLLATE NOCASE
+                GROUP BY a.id
+                ORDER BY a.popularity DESC, a.name
                 LIMIT ?
-            """, (f"%{query}%", limit))
+            """, (like, like, limit))
 
             return [{
                 'id': row['id'],

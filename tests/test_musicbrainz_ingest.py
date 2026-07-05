@@ -122,6 +122,18 @@ def _build_mini_dump(d: Path):
         [903, 8, "2020-01-01"],  # 8 = DJ-mix   -> excluded
     ])
 
+    # artist_alias: id, artist, name, locale, edits_pending, last_updated, type
+    # type 1 = Artist name, 2 = Legal name (both surfaced); 3 = Search hint (excluded).
+    _write_tsv(d / "artist_alias", [
+        [1, 3, "Kanye West", "en", 0, "2020-01-01", 1],    # Ye <- "Kanye West" (the key case)
+        [2, 3, "Yeezy", "en", 0, "2020-01-01", 1],         # Ye <- another artist-name alias
+        [3, 1, "K-Dot", "en", 0, "2020-01-01", 1],         # Kendrick <- "K-Dot"
+        [4, 2, "Solána Rowe", "en", 0, "2020-01-01", 2],   # SZA <- legal name
+        [5, 2, "S Z A", "en", 0, "2020-01-01", 3],         # SZA search hint -> EXCLUDED (type 3)
+        [6, 3, "Ye", "en", 0, "2020-01-01", 1],            # alias == display name -> skipped
+        [7, 7, "Faraway", "en", 0, "2020-01-01", 1],       # Far Artist (depth 3 only)
+    ])
+
 
 def test_mini_dump_end_to_end(tmp_path):
     dump = tmp_path / "mbdump"
@@ -180,6 +192,42 @@ def test_mini_dump_end_to_end(tmp_path):
     assert names == ["Paul McCartney", "Ye", "Kendrick Lamar"]
     # Every hop carries a connecting song.
     assert all(c["songs"] for c in conn["connections"])
+
+    # Alias search: "Kanye West" resolves to the canonical "Ye" node (KTD7),
+    # not a miss. The search-hint alias (type 3) is NOT surfaced.
+    ye = db.get_artist_by_name("Ye")
+    assert db.get_artist_by_name("Kanye West")["id"] == ye["id"]
+    assert db.get_artist_by_name("Yeezy")["id"] == ye["id"]
+    assert db.get_artist_by_name("S Z A") is None  # type-3 search hint excluded
+    # Autocomplete surfaces the canonical node once (deduped), never an alias row.
+    hits = db.search_artists("Kanye")
+    assert [h["id"] for h in hits] == [ye["id"]]
+    # Far Artist is depth-3 only -> its alias isn't in the depth-2 build.
+    assert db.get_artist_by_name("Faraway") is None
+
+
+def test_depth_3_reaches_farther(tmp_path):
+    """Depth 3 (2026-07-05 target, beyond the KTD5 depth-2 cap) reaches an
+    artist that depth 2 could not: Far Artist -> McCartney -> Ye -> Kendrick."""
+    dump = tmp_path / "mbdump"
+    _build_mini_dump(dump)
+    out = tmp_path / "mb3.db"
+
+    mi.MusicBrainzIngest(str(dump)).build(seed_mbid="mbid-K", depth=3, out_path=str(out))
+    db = CollaborationDatabase(str(out))
+    pf = PathFinder(db)
+
+    far = db.get_artist_by_name("Far Artist")
+    assert far is not None  # absent at depth 2, present at depth 3
+    k = db.get_artist_by_name("Kendrick Lamar")["id"]
+    conn = pf.find_connection(far["id"], k)
+    assert conn is not None
+    assert conn["degrees"] == 3
+    assert [n["name"] for n in conn["path"]] == [
+        "Far Artist", "Paul McCartney", "Ye", "Kendrick Lamar"
+    ]
+    # Alias for a depth-3 node is now searchable too.
+    assert db.get_artist_by_name("Faraway")["id"] == far["id"]
 
 
 def test_official_filter_can_be_disabled_conceptually(tmp_path):

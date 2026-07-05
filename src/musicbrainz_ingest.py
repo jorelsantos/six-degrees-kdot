@@ -25,7 +25,12 @@ CLI:
     python3 src/musicbrainz_ingest.py \
         --mbdump data/mb_raw/mbdump \
         --out data/collaboration_network_mb.db \
-        --seed 381086ea-f511-4aba-bdf9-71c753dc5077 --depth 2
+        --seed 381086ea-f511-4aba-bdf9-71c753dc5077 --depth 3
+
+Depth note (2026-07-05): depth 2 was the first-iteration cap (KTD5); depth 3 is
+now the target to restore long-range reach lost to the DJ-mix filter. Aliases
+(artist_alias) are loaded for in-graph nodes so a search by any known name
+(e.g. "Kanye West") resolves to the canonical node ("Ye").
 """
 
 from __future__ import annotations
@@ -51,11 +56,20 @@ OFFICIAL_STATUS_ID = "1"  # release_status: 1 = Official
 # a mixing artifact, not a real collaboration — so DJ-mix is excluded too.
 EXCLUDE_SECONDARY_TYPES = {"3", "4", "5", "8"}
 
+# artist_alias_type ids (read from the staged lookup 2026-07-05):
+# 1 = Artist name (e.g. "Kanye West" for the "Ye" node), 2 = Legal name
+# (e.g. "Aubrey Drake Graham" for Drake). 3 = Search hint (misspellings /
+# alternate spellings) is deliberately EXCLUDED to keep alias matches clean —
+# a searched name resolving to the wrong node is worse than a miss.
+ALIAS_TYPES = {"1", "2"}
+
 KENDRICK_MBID = "381086ea-f511-4aba-bdf9-71c753dc5077"
 
 # --- column indices (0-based) for the staged TSV files ----------------------
 # artist: id, gid, name, ...
 A_ID, A_GID, A_NAME = 0, 1, 2
+# artist_alias: id, artist, name, locale, edits_pending, last_updated, type, ...
+AA_ARTIST, AA_NAME, AA_TYPE = 1, 2, 6
 # artist_credit_name: artist_credit, position, artist, name, join_phrase
 ACN_CREDIT, ACN_ARTIST, ACN_NAME = 0, 2, 3
 # recording: id, gid, name, artist_credit, ...
@@ -115,12 +129,14 @@ class MusicBrainzIngest:
         mbdump_dir: str,
         official_status_ids: Optional[Set[str]] = None,
         exclude_secondary: Optional[Set[str]] = None,
+        alias_types: Optional[Set[str]] = None,
     ) -> None:
         self.dir = Path(mbdump_dir)
         self.official_status_ids = official_status_ids or {OFFICIAL_STATUS_ID}
         self.exclude_secondary = (
             EXCLUDE_SECONDARY_TYPES if exclude_secondary is None else exclude_secondary
         )
+        self.alias_types = ALIAS_TYPES if alias_types is None else alias_types
         # populated during build
         self.artist_name: Dict[str, str] = {}   # artist_id -> display name
         self.artist_gid: Dict[str, str] = {}    # artist_id -> MBID
@@ -240,6 +256,35 @@ class MusicBrainzIngest:
                     self.artist_name[aid] = c[A_NAME]
                     self.artist_gid[aid] = c[A_GID]
 
+    def aliases_for(self, node_ids: Set[str]) -> Dict[str, List[str]]:
+        """artist_id -> distinct alias names (allowed types only) for the artists
+        actually in the graph. Streamed over artist_alias so only in-graph
+        aliases are held in memory. Missing table -> empty (alias search off)."""
+        if not (self.dir / "artist_alias").exists():
+            self._log("      (artist_alias not staged; skipping alias load)")
+            return {}
+        out: Dict[str, List[str]] = defaultdict(list)
+        seen: Dict[str, Set[str]] = defaultdict(set)
+        with self._open("artist_alias") as f:
+            for line in f:
+                c = _split(line)
+                if len(c) <= AA_TYPE:
+                    continue
+                aid = c[AA_ARTIST]
+                if aid not in node_ids:
+                    continue
+                if c[AA_TYPE] not in self.alias_types:
+                    continue
+                name = c[AA_NAME]
+                if not name or name == "\\N":
+                    continue
+                key = name.casefold()
+                if key in seen[aid]:
+                    continue
+                seen[aid].add(key)
+                out[aid].append(name)
+        return out
+
     # --- Phase 4/5: BFS + write --------------------------------------------
 
     def build(self, seed_mbid: str, depth: int, out_path: str) -> Dict:
@@ -326,6 +371,18 @@ class MusicBrainzIngest:
         for aid in nodes:
             # node id = MBID (KTD7); display name from artist table
             db.add_artist(self.artist_gid.get(aid, aid), self.artist_name.get(aid, aid))
+
+        # Aliases for the in-graph artists (so "Kanye West" -> "Ye" resolves).
+        aliases = self.aliases_for(nodes)
+        alias_rows = 0
+        for aid, names in aliases.items():
+            display = self.artist_name.get(aid, "")
+            clean = [n for n in names if n.casefold() != display.casefold()]
+            if clean:
+                db.add_artist_aliases(self.artist_gid.get(aid, aid), clean)
+                alias_rows += len(clean)
+        self._log(f"      {alias_rows:,} aliases written for {len(aliases):,} artists")
+
         for (a, b), title_map in edges.items():
             ga, gb = self.artist_gid.get(a, a), self.artist_gid.get(b, b)
             for song in dedup_songs(list(title_map.keys())):
@@ -343,7 +400,12 @@ def main() -> None:
     ap.add_argument("--mbdump", default="data/mb_raw/mbdump", help="staged dump dir")
     ap.add_argument("--out", default="data/collaboration_network_mb.db")
     ap.add_argument("--seed", default=KENDRICK_MBID)
-    ap.add_argument("--depth", type=int, default=2)
+    # Depth 2 was the first-iteration cap (KTD5). Depth 3 is the current target
+    # (2026-07-05): it restores legit long-range reach (e.g. Sinatra/Bowie) that
+    # depth 2 lost once DJ-mix mix-artifact edges were filtered out. The BFS ball
+    # grows with depth, so depth 3 is a materially larger build — run it in a
+    # terminal and watch RAM.
+    ap.add_argument("--depth", type=int, default=3)
     args = ap.parse_args()
 
     ingest = MusicBrainzIngest(args.mbdump)

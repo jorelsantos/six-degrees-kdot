@@ -39,8 +39,11 @@ ARCHIVE="mbdump.tar.bz2"
 # Official-release filter (KTD10): recording->track->medium->release (release.status
 #   is an int; 1 = Official) and release_group + secondary-type tables for the
 #   Interview/Spokenword exclusion.
+# Alias search: artist_alias maps alternate names (e.g. "Kanye West") to the
+#   canonical artist node (e.g. "Ye"), so a search by any known name resolves.
 TABLES=(
   artist
+  artist_alias
   artist_credit
   artist_credit_name
   recording
