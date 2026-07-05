@@ -4,16 +4,37 @@ Six Degrees of Kendrick Lamar - Streamlit Web App
 Find the shortest collaboration path between any artist and Kendrick Lamar.
 """
 
+import os
 import streamlit as st
 from pathlib import Path
+from urllib.parse import quote_plus
 import sys
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from database import CollaborationDatabase
-from path_finder_sqlite import PathFinder, KENDRICK_ID
-from data_fetcher import SpotifyAPIClient, AuthenticationError
+from path_finder_sqlite import PathFinder
+from preview_fetcher import get_preview
+
+
+# --- Reversible data-source config (U5) ------------------------------------
+# The app selects its graph DB via a single config point so cutover between the
+# MusicBrainz build and the retained Spotify build is a one-line/env change.
+#   RABBITHOLE_DB   -> explicit DB path (highest precedence)
+# Otherwise: prefer the MusicBrainz DB if built, else fall back to the Spotify DB.
+_DATA_DIR = Path(__file__).parent / "data"
+MB_DB_PATH = _DATA_DIR / "collaboration_network_mb.db"
+SPOTIFY_DB_PATH = _DATA_DIR / "collaboration_network.db"
+
+
+def resolve_db_path() -> Path:
+    env = os.environ.get("RABBITHOLE_DB")
+    if env:
+        return Path(env)
+    if MB_DB_PATH.exists():
+        return MB_DB_PATH
+    return SPOTIFY_DB_PATH
 
 
 # Page configuration
@@ -27,7 +48,7 @@ st.set_page_config(
 @st.cache_resource
 def load_database():
     """Load the database (cached to avoid reloading on every interaction)."""
-    db_path = Path(__file__).parent / "data" / "collaboration_network.db"
+    db_path = resolve_db_path()
     if not db_path.exists():
         return None
     return CollaborationDatabase(str(db_path))
@@ -40,51 +61,17 @@ def load_path_finder(_db):
 
 
 @st.cache_resource
-def load_spotify_client():
-    """Load Spotify API client (cached). Returns None if credentials not available."""
-    try:
-        return SpotifyAPIClient()
-    except AuthenticationError:
-        return None
-
-
-def search_track_preview(song_name: str, artist_names: list, spotify_client) -> str:
+def resolve_kendrick_id(_db) -> str:
     """
-    Search for a track on Spotify and return its preview URL.
-
-    Args:
-        song_name: Name of the song
-        artist_names: List of artist names involved
-        spotify_client: SpotifyAPIClient instance
-
-    Returns:
-        Preview URL string or None if not found
+    Resolve Kendrick's node id from the active DB rather than hardcoding a
+    provider-specific id — the Spotify DB keys on a Spotify id, the MusicBrainz
+    DB keys on an MBID. An explicit RABBITHOLE_KENDRICK_ID overrides.
     """
-    if not spotify_client:
-        return None
-
-    try:
-        # Build search query with song and artists
-        query = f"{song_name} {' '.join(artist_names)}"
-
-        params = {
-            "q": query,
-            "type": "track",
-            "limit": 1
-        }
-
-        response = spotify_client._make_request("/search", params)
-        tracks = response.get("tracks", {}).get("items", [])
-
-        if tracks:
-            track = tracks[0]
-            return track.get("preview_url")
-
-    except Exception as e:
-        # Silently fail if preview not available
-        return None
-
-    return None
+    env = os.environ.get("RABBITHOLE_KENDRICK_ID")
+    if env:
+        return env
+    artist = _db.get_artist_by_name("Kendrick Lamar")
+    return artist["id"] if artist else ""
 
 
 def display_artist_card(artist_name: str, artist_id: str):
@@ -121,7 +108,7 @@ def display_artist_card(artist_name: str, artist_id: str):
     """, unsafe_allow_html=True)
 
 
-def display_path(connection: dict, spotify_client=None):
+def display_path(connection: dict):
     """Display the connection path with artist cards and songs."""
     degrees = connection['degrees']
 
@@ -196,105 +183,88 @@ def display_path(connection: dict, spotify_client=None):
             # Find the connection between this artist and the next
             conn = connections[i]
             songs = conn['songs']
+            # Per-song full lineup (falls back to bare names for the legacy DB).
+            song_details = conn.get('song_details') or [
+                {'name': s, 'collaborators': []} for s in songs
+            ]
             from_artist = conn['from']['name']
             to_artist = conn['to']['name']
 
-            # Spotify-style connection section
-            st.markdown(f"""
-                <div style="margin: 32px auto; max-width: 600px;">
-                    <!-- Collaborated On Header -->
-                    <div style="
-                        text-align: center;
-                        margin-bottom: 24px;
-                    ">
-                        <div style="
-                            display: inline-block;
-                            font-size: 0.875rem;
-                            font-weight: 700;
-                            text-transform: uppercase;
-                            letter-spacing: 0.1em;
-                            color: #1DB954;
-                            background: rgba(29, 185, 84, 0.1);
-                            padding: 8px 24px;
-                            border-radius: 500px;
-                            border: 2px solid #1DB954;
-                        ">
-                            Collaborated On
-                        </div>
-                    </div>
+            # Build the whole "Collaborated On" section as ONE self-contained
+            # HTML string. Streamlit's current markdown renderer escapes HTML
+            # blocks left with unclosed tags across separate st.markdown calls,
+            # so every tag opened here is also closed here.
+            song_rows = ""
+            for detail in song_details[:3]:
+                song = detail['name']
+                # Other artists on the track beyond the two path endpoints —
+                # the delightful "who else is on this?" detail.
+                endpoints = {from_artist.lower(), to_artist.lower()}
+                others = [c for c in detail.get('collaborators', []) if c.lower() not in endpoints]
+                feat_html = ""
+                if others:
+                    shown = ", ".join(others[:6]) + ("…" if len(others) > 6 else "")
+                    feat_html = (
+                        f'<div style="color:#B3B3B3;font-size:0.8rem;margin:2px 0 4px 24px;">'
+                        f'with {shown}</div>'
+                    )
 
-                    <!-- Songs Container -->
-                    <div style="
-                        background: #181818;
-                        border-radius: 12px;
-                        padding: 24px;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-                    ">
-            """, unsafe_allow_html=True)
+                # Free, no-auth 30s preview (iTunes primary, Deezer fallback);
+                # degrades gracefully to no player when none is found.
+                preview = get_preview(song, [from_artist, to_artist])
 
-            # Display songs with preview players
-            songs_to_show = songs[:3]  # Show first 3 songs
+                audio_html = ""
+                if preview:
+                    audio_html = (
+                        f'<audio controls style="width:100%;height:32px;margin-top:8px;">'
+                        f'<source src="{preview.preview_url}" type="audio/mpeg">'
+                        f'</audio>'
+                    )
 
-            for idx, song in enumerate(songs_to_show):
-                # Try to get preview URL if Spotify client is available
-                preview_url = None
-                if spotify_client:
-                    preview_url = search_track_preview(song, [from_artist, to_artist], spotify_client)
+                # Store link-out proximate to the preview (honors iTunes terms;
+                # aligns with STRATEGY.md's "link out to verify" behavior).
+                if preview and preview.store_url:
+                    label = "Listen on Apple Music" if preview.provider == "itunes" else "Listen on Deezer"
+                    link = preview.store_url
+                else:
+                    label = "Search on Apple Music"
+                    link = f"https://music.apple.com/us/search?term={quote_plus(song + ' ' + from_artist)}"
+                link_html = (
+                    f'<a href="{link}" target="_blank" style="display:inline-block;'
+                    f'margin-top:8px;font-size:0.8rem;color:#1DB954;text-decoration:none;">'
+                    f'&#9654; {label}</a>'
+                )
 
-                # Display song in Spotify track row style
-                st.markdown(f"""
-                    <div style="
-                        padding: 12px 0;
-                        border-bottom: 1px solid #282828;
-                    ">
-                        <div style="
-                            display: flex;
-                            align-items: center;
-                            margin-bottom: 8px;
-                        ">
-                            <span style="
-                                color: #1DB954;
-                                font-weight: 700;
-                                margin-right: 12px;
-                                font-size: 1.1rem;
-                            ">♫</span>
-                            <span style="
-                                color: #FFFFFF;
-                                font-weight: 500;
-                                font-size: 1rem;
-                            ">{song}</span>
-                        </div>
-                """, unsafe_allow_html=True)
+                song_rows += (
+                    f'<div style="padding:12px 0;border-bottom:1px solid #282828;">'
+                    f'<div style="display:flex;align-items:center;margin-bottom:4px;">'
+                    f'<span style="color:#1DB954;font-weight:700;margin-right:12px;font-size:1.1rem;">&#9834;</span>'
+                    f'<span style="color:#FFFFFF;font-weight:500;font-size:1rem;">{song}</span>'
+                    f'</div>{feat_html}{audio_html}{link_html}</div>'
+                )
 
-                # Add preview player if available
-                if preview_url:
-                    st.markdown(f"""
-                        <audio controls style="
-                            width: 100%;
-                            height: 32px;
-                            margin-top: 8px;
-                        ">
-                            <source src="{preview_url}" type="audio/mpeg">
-                            Your browser does not support the audio element.
-                        </audio>
-                    """, unsafe_allow_html=True)
-
-                st.markdown("</div>", unsafe_allow_html=True)
-
+            more_html = ""
             if len(songs) > 3:
-                st.markdown(f"""
-                    <div style="
-                        text-align: center;
-                        color: #B3B3B3;
-                        font-size: 0.875rem;
-                        margin-top: 16px;
-                        font-style: italic;
-                    ">
-                        +{len(songs) - 3} more collaboration{"s" if len(songs) - 3 > 1 else ""}
-                    </div>
-                """, unsafe_allow_html=True)
+                n = len(songs) - 3
+                more_html = (
+                    f'<div style="text-align:center;color:#B3B3B3;font-size:0.875rem;'
+                    f'margin-top:16px;font-style:italic;">+{n} more collaboration'
+                    f'{"s" if n > 1 else ""}</div>'
+                )
 
-            st.markdown("</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                '<div style="margin:32px auto;max-width:600px;">'
+                '<div style="text-align:center;margin-bottom:24px;">'
+                '<div style="display:inline-block;font-size:0.875rem;font-weight:700;'
+                'text-transform:uppercase;letter-spacing:0.1em;color:#1DB954;'
+                'background:rgba(29,185,84,0.1);padding:8px 24px;border-radius:500px;'
+                'border:2px solid #1DB954;">Collaborated On</div></div>'
+                '<div style="background:#181818;border-radius:12px;padding:24px;'
+                'box-shadow:0 4px 12px rgba(0,0,0,0.4);">'
+                f'{song_rows}{more_html}'
+                '</div></div>',
+                unsafe_allow_html=True,
+            )
 
 
 def main():
@@ -391,11 +361,11 @@ def main():
 
     if db is None:
         st.error("Database not found. Please run the network builder first.")
-        st.code("python3 src/build_network_sqlite.py", language="bash")
+        st.code("python3 src/build_network_musicbrainz.py", language="bash")
         return
 
-    # Load Spotify client for preview players (optional)
-    spotify_client = load_spotify_client()
+    # Resolve Kendrick's node id from whichever DB is active (MBID or Spotify id).
+    kendrick_id = resolve_kendrick_id(db)
 
     # Search input with autocomplete
     artist_name = st.text_input(
@@ -446,20 +416,41 @@ def main():
 
         with st.spinner(f"Finding connection to Kendrick..."):
             # Check if it's Kendrick himself
-            if artist['id'] == KENDRICK_ID:
+            if artist['id'] == kendrick_id:
                 st.balloons()
                 st.success("🎤 That's Kendrick Lamar himself! 0 degrees of separation!")
                 return
 
             # Find path
             path_finder = load_path_finder(db)
-            connection = path_finder.find_connection(artist['id'], KENDRICK_ID)
+            connection = path_finder.find_connection(artist['id'], kendrick_id)
 
             if connection:
-                display_path(connection, spotify_client)
+                display_path(connection)
             else:
                 st.error("No connection found.")
                 st.markdown(f"*{artist['name']} doesn't have a path to Kendrick Lamar in the current network.*")
+
+    # Attribution footer (MusicBrainz data license good-citizenship; Apple/iTunes
+    # store-link terms). Rendered on every view.
+    st.markdown("""
+        <div style="
+            margin-top: 48px;
+            padding-top: 16px;
+            border-top: 1px solid #282828;
+            text-align: center;
+            color: #808080;
+            font-size: 0.75rem;
+            line-height: 1.6;
+        ">
+            Collaboration data from
+            <a href="https://musicbrainz.org" target="_blank" style="color:#1DB954;text-decoration:none;">MusicBrainz</a>
+            (CC0). Song previews and links via the
+            <a href="https://www.apple.com/apple-music/" target="_blank" style="color:#1DB954;text-decoration:none;">Apple Music / iTunes</a>
+            and <a href="https://www.deezer.com" target="_blank" style="color:#1DB954;text-decoration:none;">Deezer</a>
+            APIs. Not affiliated with Apple, Deezer, or the artists.
+        </div>
+    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

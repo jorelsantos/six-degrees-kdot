@@ -1,6 +1,11 @@
 """
 Data Fetcher Module for Spotify API
 
+LEGACY / FALLBACK (retained, not deleted — migration plan KTD4): the Spotify
+crawl is no longer the primary graph source as of the 2026-07-04 MusicBrainz
+migration. Kept as a reversible fallback; not used by the app's preview path
+either (previews now come from src/preview_fetcher.py: iTunes + Deezer).
+
 This module handles fetching artist data from the Spotify API, including
 artist search, album retrieval, and collaboration discovery. All API
 responses are cached locally to minimize API calls and improve performance.

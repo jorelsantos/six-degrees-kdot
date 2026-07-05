@@ -31,6 +31,8 @@ Data enrichment (deeper/richer collaboration network) plus a public, shareable d
 
 _Why it serves the approach:_ Directly tests whether the pre-built network is rich enough to produce delight at real scale, with real strangers.
 
+> **Update (2026-07-04):** the graph source moved from a Spotify crawl to the **MusicBrainz dump** (CC0, no rate limit) — this removed the crawl's fatal rate-limit wall and yields a complete, free-to-traverse graph. Previews moved to **iTunes/Deezer** (Spotify deprecated `preview_url`). A depth-2 build reaches ~16k artists with a ~0% no-connection rate across famous cross-genre artists — strong delight signal. Known accepted caveat: MusicBrainz includes novelty/troll recordings marked "Official" that create some surprising-but-real-in-the-data edges (e.g. a joke track links Paul McCartney → Kendrick); we report the data honestly rather than hand-curating it.
+
 ### Track 2: Rabbit Hole UI/UX platform
 
 Move off Streamlit; build a custom, Spotify-inspired design system with real UI/UX craft.
@@ -39,7 +41,7 @@ _Why it serves the approach:_ Delight and shareability depend on how it feels, n
 
 ### Track 3: Open-source template
 
-Generalize beyond Kendrick so anyone can plug in their own Spotify developer key and their own favorite artist as the graph's center.
+Generalize beyond Kendrick so anyone can pick their own favorite artist as the graph's center. **De-risked by the MusicBrainz migration:** the graph no longer needs a per-user Spotify developer key — anyone can rebuild from the CC0 MusicBrainz dump by changing the seed MBID.
 
 _Why it serves the approach:_ Extends the same delight loop to any fan's own favorite artist, not just Kendrick fans.
 

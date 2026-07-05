@@ -1,6 +1,12 @@
 """
 SQLite Network Builder for Six Degrees of Kendrick Lamar
 
+LEGACY / FALLBACK (retained, not deleted — migration plan KTD4): this is the
+original Spotify-crawl graph builder. As of the 2026-07-04 MusicBrainz migration
+the primary graph source is the MusicBrainz dump (src/musicbrainz_ingest.py);
+this crawler and its data/collaboration_network.db output are kept as a
+reversible fallback and comparison baseline, not the primary build path.
+
 This script builds the artist collaboration network and stores it in SQLite.
 Run this once to populate the database, then use the Streamlit app to query it.
 

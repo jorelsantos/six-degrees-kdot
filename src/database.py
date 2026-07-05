@@ -81,15 +81,25 @@ class CollaborationDatabase:
                 )
             """)
 
-            # Songs table (edge attributes)
+            # Songs table (edge attributes). `collaborators` is a JSON array of
+            # ALL artist names credited on the connecting recording (so the UI
+            # can show the full lineup, e.g. "My Way" feat. Common & Lloyd).
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS songs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     collaboration_id INTEGER NOT NULL,
                     song_name TEXT NOT NULL,
+                    collaborators TEXT DEFAULT '[]',
                     FOREIGN KEY (collaboration_id) REFERENCES collaborations(id)
                 )
             """)
+
+            # Migration guard: add `collaborators` to DBs created before it existed
+            # (e.g. the legacy Spotify build), so both DBs load with one schema.
+            cursor.execute("PRAGMA table_info(songs)")
+            song_cols = {row[1] for row in cursor.fetchall()}
+            if "collaborators" not in song_cols:
+                cursor.execute("ALTER TABLE songs ADD COLUMN collaborators TEXT DEFAULT '[]'")
 
             # Indexes for faster queries
             cursor.execute("""
@@ -186,14 +196,16 @@ class CollaborationDatabase:
             return neighbors
 
     def add_collaboration(self, artist1_id: str, artist2_id: str,
-                          song_name: str) -> None:
+                          song_name: str, collaborators: List[str] = None) -> None:
         """
         Add a collaboration between two artists.
 
         Args:
-            artist1_id: First artist's Spotify ID
-            artist2_id: Second artist's Spotify ID
+            artist1_id: First artist's ID (Spotify ID or MBID)
+            artist2_id: Second artist's ID
             song_name: Name of the collaboration song
+            collaborators: All artist names credited on the connecting recording
+                (the full lineup, for display). Optional.
         """
         # Ensure consistent ordering for the unique constraint
         if artist1_id > artist2_id:
@@ -223,9 +235,9 @@ class CollaborationDatabase:
 
             if not cursor.fetchone():
                 cursor.execute("""
-                    INSERT INTO songs (collaboration_id, song_name)
-                    VALUES (?, ?)
-                """, (collab_id, song_name))
+                    INSERT INTO songs (collaboration_id, song_name, collaborators)
+                    VALUES (?, ?, ?)
+                """, (collab_id, song_name, json.dumps(collaborators or [])))
 
     def get_artist(self, artist_id: str) -> Optional[Dict]:
         """
@@ -389,6 +401,35 @@ class CollaborationDatabase:
             """, (artist1_id, artist2_id))
 
             return [row['song_name'] for row in cursor.fetchall()]
+
+    def get_collaboration_song_details(self, artist1_id: str, artist2_id: str) -> List[Dict]:
+        """
+        Like get_collaboration_songs, but each song also carries the full list
+        of artists credited on that recording (for showing the lineup).
+
+        Returns:
+            List of {'name': str, 'collaborators': List[str]}
+        """
+        if artist1_id > artist2_id:
+            artist1_id, artist2_id = artist2_id, artist1_id
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT s.song_name, s.collaborators
+                FROM songs s
+                JOIN collaborations c ON s.collaboration_id = c.id
+                WHERE c.artist1_id = ? AND c.artist2_id = ?
+            """, (artist1_id, artist2_id))
+
+            details = []
+            for row in cursor.fetchall():
+                try:
+                    collabs = json.loads(row['collaborators']) if row['collaborators'] else []
+                except (ValueError, TypeError):
+                    collabs = []
+                details.append({'name': row['song_name'], 'collaborators': collabs})
+            return details
 
     def get_stats(self) -> Dict:
         """Get database statistics."""

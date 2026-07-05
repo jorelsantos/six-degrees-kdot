@@ -114,10 +114,12 @@ class PathFinder:
             if i > 0:
                 prev_id = path[i - 1]
                 songs = self.db.get_collaboration_songs(prev_id, artist_id)
+                song_details = self.db.get_collaboration_song_details(prev_id, artist_id)
                 connections.append({
                     'from': path_details[i - 1],
                     'to': path_details[i],
-                    'songs': songs
+                    'songs': songs,
+                    'song_details': song_details,
                 })
 
         return {
