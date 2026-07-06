@@ -13,7 +13,7 @@ import sys
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from database import CollaborationDatabase
+from database import CollaborationDatabase, disambiguate_labels
 from path_finder_sqlite import PathFinder
 from preview_fetcher import get_preview
 
@@ -75,31 +75,30 @@ def resolve_kendrick_id(_db) -> str:
 
 
 def display_artist_card(artist_name: str, artist_id: str):
-    """Display an artist card in Spotify style - clean, modern, professional."""
+    """Display a compact artist card - clean, modern, professional."""
     st.markdown(f"""
         <div style="
             background: #181818;
-            border-radius: 12px;
-            padding: 32px;
-            margin: 24px auto;
-            max-width: 500px;
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin: 12px auto;
+            max-width: 340px;
             text-align: center;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-            border: 2px solid #1DB954;
-            transition: transform 0.2s;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            border: 1px solid #1DB954;
         ">
             <div style="
-                font-size: 2rem;
-                font-weight: 900;
+                font-size: 1.35rem;
+                font-weight: 800;
                 color: #FFFFFF;
-                letter-spacing: -0.02em;
-                margin-bottom: 8px;
+                letter-spacing: -0.01em;
+                margin-bottom: 6px;
             ">
                 {artist_name}
             </div>
             <div style="
-                width: 40px;
-                height: 3px;
+                width: 32px;
+                height: 2px;
                 background: #1DB954;
                 margin: 0 auto;
                 border-radius: 2px;
@@ -112,59 +111,39 @@ def display_path(connection: dict):
     """Display the connection path with artist cards and songs."""
     degrees = connection['degrees']
 
-    # Degrees header - Spotify style
+    # Degrees header - compact, no emoji (professional).
     if degrees == 0:
         st.markdown("""
             <div style="
                 text-align: center;
-                padding: 24px;
-                background: linear-gradient(135deg, rgba(29, 185, 84, 0.2), rgba(29, 185, 84, 0.05));
-                border-radius: 12px;
-                border: 2px solid #1DB954;
-                margin-bottom: 32px;
+                padding: 14px 20px;
+                background: linear-gradient(135deg, rgba(29, 185, 84, 0.18), rgba(29, 185, 84, 0.04));
+                border-radius: 10px;
+                border: 1px solid #1DB954;
+                margin-bottom: 20px;
             ">
-                <div style="font-size: 2rem; margin-bottom: 8px;">🎤</div>
-                <div style="font-size: 1.25rem; font-weight: 700; color: #1DB954;">
-                    That's Kendrick Lamar himself!
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-    elif degrees == 1:
-        st.markdown(f"""
-            <div style="
-                text-align: center;
-                padding: 24px;
-                background: linear-gradient(135deg, rgba(29, 185, 84, 0.2), rgba(29, 185, 84, 0.05));
-                border-radius: 12px;
-                border: 2px solid #1DB954;
-                margin-bottom: 32px;
-            ">
-                <div style="font-size: 2rem; margin-bottom: 8px;">🔥</div>
-                <div style="font-size: 1.5rem; font-weight: 900; color: #FFFFFF;">
-                    {degrees} Degree
-                </div>
-                <div style="font-size: 1rem; color: #B3B3B3; margin-top: 4px;">
-                    of separation
+                <div style="font-size: 1.1rem; font-weight: 700; color: #1DB954;">
+                    That's Kendrick Lamar himself
                 </div>
             </div>
         """, unsafe_allow_html=True)
     else:
+        label = "Degree" if degrees == 1 else "Degrees"
         st.markdown(f"""
             <div style="
                 text-align: center;
-                padding: 24px;
-                background: linear-gradient(135deg, rgba(29, 185, 84, 0.2), rgba(29, 185, 84, 0.05));
-                border-radius: 12px;
-                border: 2px solid #1DB954;
-                margin-bottom: 32px;
+                padding: 14px 20px;
+                background: linear-gradient(135deg, rgba(29, 185, 84, 0.18), rgba(29, 185, 84, 0.04));
+                border-radius: 10px;
+                border: 1px solid #1DB954;
+                margin-bottom: 20px;
             ">
-                <div style="font-size: 2rem; margin-bottom: 8px;">🔥</div>
-                <div style="font-size: 1.5rem; font-weight: 900; color: #FFFFFF;">
-                    {degrees} Degrees
-                </div>
-                <div style="font-size: 1rem; color: #B3B3B3; margin-top: 4px;">
-                    of separation
-                </div>
+                <span style="font-size: 1.6rem; font-weight: 900; color: #FFFFFF; vertical-align: middle;">
+                    {degrees}
+                </span>
+                <span style="font-size: 0.95rem; color: #B3B3B3; margin-left: 8px; vertical-align: middle;">
+                    {label} of separation
+                </span>
             </div>
         """, unsafe_allow_html=True)
 
@@ -252,14 +231,18 @@ def display_path(connection: dict):
                     f'{"s" if n > 1 else ""}</div>'
                 )
 
+            # Header names the pair this connection is between (Q1: pair label),
+            # so it's clear whose collaboration these songs are.
             st.markdown(
-                '<div style="margin:32px auto;max-width:600px;">'
-                '<div style="text-align:center;margin-bottom:24px;">'
-                '<div style="display:inline-block;font-size:0.875rem;font-weight:700;'
+                '<div style="margin:20px auto;max-width:600px;">'
+                '<div style="text-align:center;margin-bottom:14px;">'
+                '<div style="display:inline-block;font-size:0.75rem;font-weight:700;'
                 'text-transform:uppercase;letter-spacing:0.1em;color:#1DB954;'
-                'background:rgba(29,185,84,0.1);padding:8px 24px;border-radius:500px;'
-                'border:2px solid #1DB954;">Collaborated On</div></div>'
-                '<div style="background:#181818;border-radius:12px;padding:24px;'
+                'background:rgba(29,185,84,0.1);padding:5px 16px;border-radius:500px;'
+                'border:1px solid #1DB954;">Collaborated On</div>'
+                f'<div style="color:#B3B3B3;font-size:0.9rem;margin-top:8px;">'
+                f'{from_artist} &times; {to_artist}</div></div>'
+                '<div style="background:#181818;border-radius:10px;padding:16px;'
                 'box-shadow:0 4px 12px rgba(0,0,0,0.4);">'
                 f'{song_rows}{more_html}'
                 '</div></div>',
@@ -369,28 +352,32 @@ def main():
 
     # Search input with autocomplete
     artist_name = st.text_input(
-        "Enter an artist name:",
-        placeholder="Start typing an artist name...",
+        "Search an artist",
+        placeholder="e.g. Drake, SZA, Sinatra…",
         key="artist_search"
     )
 
-    # Show autocomplete suggestions as user types
+    # Suggestions and submit share ONE resolution pipeline (resolve_artist) —
+    # plan 2026-07-06-002 KTD1. Suggestion clicks pin the exact node by id;
+    # the submit button auto-runs the same list's head.
     selected_artist = None
+    candidates = []
     if artist_name and len(artist_name) >= 2:
-        suggestions = db.search_artists(artist_name, limit=8)
+        candidates = db.resolve_artist(artist_name, limit=8)
 
-        if suggestions:
+        if candidates:
             st.markdown("**Suggestions:**")
-            cols = st.columns(2)
-            for idx, suggestion in enumerate(suggestions):
-                col = cols[idx % 2]
-                with col:
-                    if st.button(
-                        f"🎤 {suggestion['name']}",
-                        key=f"suggestion_{suggestion['id']}",
-                        use_container_width=True
-                    ):
-                        selected_artist = suggestion
+            # Single column, ranked order — the top hit stays visually first.
+            # Duplicate names carry a collab-count qualifier so three
+            # "The Game" buttons are tellable-apart (R6).
+            labels = disambiguate_labels(candidates)
+            for suggestion, label in zip(candidates, labels):
+                if st.button(
+                    label,
+                    key=f"suggestion_{suggestion['id']}",
+                    use_container_width=True
+                ):
+                    selected_artist = suggestion
 
     st.markdown("")
 
@@ -403,13 +390,27 @@ def main():
             artist = selected_artist
         elif artist_name:
             with st.spinner(f"Searching for {artist_name}..."):
-                # Try exact match first
-                artist = db.get_artist_by_name(artist_name)
-
-                if not artist:
+                # Submit auto-runs the top-ranked candidate (R2): typos,
+                # accents, punctuation, and partial names resolve instead of
+                # dead-ending. The honest "isn't in our network" only fires
+                # when nothing plausible matches (gibberish).
+                submit_candidates = candidates or db.resolve_artist(artist_name, limit=8)
+                if not submit_candidates:
                     st.error(f"'{artist_name}' isn't in our network yet.")
-                    st.info("Please select an artist from the suggestions above, or try a different search.")
+                    st.info("Try a different spelling or another artist.")
                     return
+                artist = submit_candidates[0]
+                if artist['name'].strip().lower() != artist_name.strip().lower():
+                    # Same-render notice: it lives and dies with this result —
+                    # no session_state — matching every other message here.
+                    st.markdown(
+                        f'<div style="text-align:center;color:#B3B3B3;'
+                        f'font-size:0.9rem;margin:4px 0 12px 0;">'
+                        f'Showing results for <span style="color:#1DB954;'
+                        f'font-weight:700;">{artist["name"]}</span>'
+                        f' — not who you meant? Pick from the suggestions above.</div>',
+                        unsafe_allow_html=True,
+                    )
         else:
             st.warning("Please enter an artist name.")
             return

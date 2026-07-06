@@ -390,6 +390,12 @@ class MusicBrainzIngest:
                 lineup_names = sorted(self.artist_name.get(i, i) for i in lineup_ids)
                 db.add_collaboration(ga, gb, song, collaborators=lineup_names)
 
+        # Degree is a ranking key + user-facing label (plan 2026-07-06-002):
+        # a fresh build starts from an empty schema, so without this final
+        # refresh every rebuilt DB would ship all-zero degrees and search
+        # ranking would silently regress to alphabetical-ish.
+        db.refresh_degrees()
+
         s = db.get_stats()
         s["out"] = out_path
         return s
