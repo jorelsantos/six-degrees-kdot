@@ -12,6 +12,13 @@
       "runtimeExecutable": "streamlit",
       "runtimeArgs": ["run", "app.py", "--server.headless", "true", "--server.port", "8502"],
       "port": 8502
+    },
+    {
+      "name": "rabbit-hole-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "frontend",
+      "port": 3000
     }
   ]
 }

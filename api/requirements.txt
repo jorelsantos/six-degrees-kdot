@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+# The engine's own deps (requests, rapidfuzz) come from the repo-root
+# requirements.txt; api/ imports src/ directly.
