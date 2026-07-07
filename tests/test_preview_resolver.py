@@ -9,6 +9,7 @@ def _itunes_hit(title, artists, timeout):
         preview_url="https://audio-ssl.itunes.apple.com/x.m4a",
         provider="itunes", store_url="https://music.apple.com/x",
         matched_title=title, matched_artist=(artists[0] if artists else None),
+        album="Album X", year=2015,
     )
 
 
@@ -17,6 +18,7 @@ def _deezer_hit(title, artists, timeout):
         preview_url="https://cdns-preview.deezer.com/x.mp3",
         provider="deezer", store_url="https://deezer.com/x",
         matched_title=title, matched_artist=(artists[0] if artists else None),
+        album="Dz Album", year=None,
     )
 
 
@@ -34,6 +36,16 @@ def test_spotify_tier_wins_when_scrape_hits():
     assert r.audio_url == "https://p.scdn.co/mp3-preview/x"
     assert r.artwork_url == "https://i.scdn.co/image/y"
     assert r.store_url == "https://open.spotify.com/track/tid1"
+    # Spotify embed has no album — backfilled from the iTunes metadata lookup.
+    assert r.album == "Album X"
+    assert r.year == 2015
+
+
+def test_itunes_tier_carries_album_and_year():
+    r = resolve_preview("Cruel", ["Jay Rock"], spotify_track_id=None,
+                        scrape=lambda tid: None, itunes=_itunes_hit, deezer=_deezer_hit)
+    assert r.source == "itunes"
+    assert r.album == "Album X" and r.year == 2015
 
 
 def test_falls_through_to_itunes_when_no_track_id():

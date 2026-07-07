@@ -35,6 +35,8 @@ class ResolvedPreview:
     matched_title: Optional[str] = None
     matched_artist: Optional[str] = None
     store_url: Optional[str] = None   # link to the full track on that service
+    album: Optional[str] = None       # album / collection name
+    year: Optional[int] = None        # release year
 
 
 def _spotify_tier(
@@ -56,6 +58,8 @@ def _spotify_tier(
         matched_title=title,
         matched_artist=artists[0] if artists else None,
         store_url=f"https://open.spotify.com/track/{tid}",
+        album=None,  # the embed carries no album name — backfilled from iTunes
+        year=data.get("year"),
     )
 
 
@@ -76,6 +80,8 @@ def _fetcher_tier(source: str, fn, title: str, artists: List[str],
         matched_title=p.matched_title,
         matched_artist=p.matched_artist,
         store_url=p.store_url,
+        album=getattr(p, "album", None),
+        year=getattr(p, "year", None),
     )
 
 
@@ -96,6 +102,18 @@ def resolve_preview(
 
     sp = _spotify_tier(title, artists, spotify_track_id, scrape)
     if sp is not None:
+        # The Spotify embed has no album name (and sometimes no year) — backfill
+        # from a free iTunes metadata lookup so the card can show album + year.
+        if sp.album is None or sp.year is None:
+            try:
+                meta = itunes(title, artists, timeout)
+            except (requests.RequestException, ValueError):
+                meta = None
+            if meta is not None:
+                from dataclasses import replace
+                sp = replace(sp,
+                             album=sp.album or getattr(meta, "album", None),
+                             year=sp.year or getattr(meta, "year", None))
         return sp
 
     it = _fetcher_tier("itunes", itunes, title, artists, timeout)

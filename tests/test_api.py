@@ -252,6 +252,24 @@ def test_edge_preview_returns_first_previewable_song(client, monkeypatch):
     assert body["fallback_url"] is None
 
 
+def test_edge_preview_returns_rich_metadata(client, monkeypatch):
+    import main
+    from preview_resolver import ResolvedPreview
+    monkeypatch.setattr(main, "_spotify_token", lambda: None)
+    monkeypatch.setattr(
+        main, "resolve_waterfall",
+        lambda title, artists, spotify_track_id=None, **k: ResolvedPreview(
+            source="itunes", audio_url="https://a/x.m4a", artwork_url="https://art/x.jpg",
+            matched_title=title, album="Album X", year=2015),
+    )
+    monkeypatch.setattr(main.album_color, "dominant_color", lambda *a, **k: "#aabbcc")
+    r = client.get("/api/edge-preview", params={"a": _rihanna_id(client), "b": "kendrick"}).json()
+    assert r["album"] == "Album X"
+    assert r["year"] == 2015
+    assert r["dominant_color"] == "#aabbcc"
+    assert r["artists"] == ["Rihanna", "Kendrick Lamar"]  # the MB lineup
+
+
 def test_edge_preview_apple_fallback_when_no_preview(client, monkeypatch):
     import main
     monkeypatch.setattr(main, "_spotify_token", lambda: None)

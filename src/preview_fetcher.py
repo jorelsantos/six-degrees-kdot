@@ -46,6 +46,8 @@ class Preview:
     matched_title: Optional[str] = None
     matched_artist: Optional[str] = None
     artwork_url: Optional[str] = None  # album cover thumbnail
+    album: Optional[str] = None        # album / collection name
+    year: Optional[int] = None         # release year
 
 
 # Process-lifetime cache keyed by (song, artists-tuple). Values are Preview | None.
@@ -97,6 +99,13 @@ def _accept(query_song: str, artist_names: List[str], title: str, artist: str) -
     return _title_matches(query_song, title) and _artist_matches(artist_names, artist)
 
 
+def _year_from(datestr: Optional[str]) -> Optional[int]:
+    """Parse a leading 4-digit year from an ISO-ish date (e.g. '2005-08-29T...')."""
+    if not datestr or len(datestr) < 4 or not datestr[:4].isdigit():
+        return None
+    return int(datestr[:4])
+
+
 def _build_term(song_name: str, artist_names: List[str]) -> str:
     artists = " ".join(a for a in artist_names if a)
     return f"{song_name} {artists}".strip()
@@ -132,6 +141,8 @@ def _try_itunes(song_name: str, artist_names: List[str], timeout: float) -> Opti
                 matched_title=track.get("trackName"),
                 matched_artist=track.get("artistName"),
                 artwork_url=art,
+                album=track.get("collectionName"),
+                year=_year_from(track.get("releaseDate")),
             )
     return None
 
@@ -150,13 +161,16 @@ def _try_deezer(song_name: str, artist_names: List[str], timeout: float) -> Opti
             continue
         artist = (track.get("artist") or {}).get("name", "")
         if _accept(song_name, artist_names, track.get("title", ""), artist):
+            album = track.get("album") or {}
             return Preview(
                 preview_url=preview,
                 provider="deezer",
                 store_url=track.get("link"),
                 matched_title=track.get("title"),
                 matched_artist=artist,
-                artwork_url=(track.get("album") or {}).get("cover_medium"),
+                artwork_url=album.get("cover_medium"),
+                album=album.get("title"),
+                year=None,  # not present in Deezer search results
             )
     return None
 

@@ -46,6 +46,7 @@ from spotify_enrich import (  # noqa: E402
 # Aliased: the /api/resolve-preview endpoint function below is also named
 # resolve_preview and would shadow this import (name collision).
 from preview_resolver import resolve_preview as resolve_waterfall, apple_search_url  # noqa: E402
+import album_color  # noqa: E402
 
 
 def _load_dotenv() -> None:
@@ -192,6 +193,10 @@ class EdgePreviewResponse(BaseModel):
     artwork_url: Optional[str]
     store_url: Optional[str]
     fallback_url: Optional[str]    # Apple Music search link when no preview exists
+    artists: List[str] = []        # credited lineup (from the MusicBrainz edge)
+    album: Optional[str] = None
+    year: Optional[int] = None
+    dominant_color: Optional[str] = None  # '#rrggbb' from the cover, for card theming
 
 
 # --- Endpoints ----------------------------------------------------------------
@@ -350,6 +355,8 @@ def edge_preview(a: str, b: str) -> EdgePreviewResponse:
             return EdgePreviewResponse(
                 song=s["name"], source=pv.source, audio_url=pv.audio_url,
                 artwork_url=pv.artwork_url, store_url=pv.store_url, fallback_url=None,
+                artists=s["collaborators"], album=pv.album, year=pv.year,
+                dominant_color=album_color.dominant_color(pv.artwork_url),
             )
 
     # No previewable song on this edge → Apple Music search fallback (R5).
@@ -358,4 +365,5 @@ def edge_preview(a: str, b: str) -> EdgePreviewResponse:
     return EdgePreviewResponse(
         song=top["name"], source=None, audio_url=None, artwork_url=None,
         store_url=None, fallback_url=apple_search_url(top["name"], artist),
+        artists=top["collaborators"],
     )

@@ -32,6 +32,8 @@ _AUDIO_RE = re.compile(r'"audioPreview"\s*:\s*\{\s*"url"\s*:\s*"([^"]+)"')
 _ART_RE = re.compile(
     r'https://(?:i\.scdn\.co|[a-z0-9-]+\.spotifycdn\.com)/image/[a-z0-9]+'
 )
+# releaseDate.isoString → year (the embed carries no album name).
+_YEAR_RE = re.compile(r'"releaseDate"\s*:\s*\{\s*"isoString"\s*:\s*"(\d{4})')
 
 
 def _best_artwork(html: str) -> Optional[str]:
@@ -82,7 +84,12 @@ def scrape_preview(
         if html and "__NEXT_DATA__" in html:
             m = _AUDIO_RE.search(html)
             if m and m.group(1) and m.group(1) != "null":
-                result = {"audio_url": m.group(1), "artwork_url": _best_artwork(html)}
+                ym = _YEAR_RE.search(html)
+                result = {
+                    "audio_url": m.group(1),
+                    "artwork_url": _best_artwork(html),
+                    "year": int(ym.group(1)) if ym else None,
+                }
     except (requests.RequestException, ValueError):
         result = None
 
