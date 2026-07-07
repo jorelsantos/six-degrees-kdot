@@ -74,3 +74,15 @@ Plan 007's feasibility spike (`scripts/preview_coverage_spike.py`) measured Spot
 - [x] **Token cached in-process** (`_spotify_token`, ~50 min) — the client-credentials token is fetched once, not per request; `.env` is auto-loaded so `uvicorn` has creds.
 
 > **⚠️ Pre-public guardrail (DEFERRED to the deployment plan):** `/api/resolve-preview` makes a live Spotify call and must NOT be exposed to public traffic without a global rate limit, per-IP limit, and daily budget. It is demo-safe (each song resolves at most once, then cached), but a viral spike of first-plays could approach Spotify's rolling rate window. Do not deploy publicly until those guardrails land.
+
+### Added in plan 008 (preview waterfall + six-degrees redesign)
+
+The Spotify iframe embed (plan 004) is **retired** as the player. Previews now come from a **waterfall** returning a directly-playable audio URL — **Spotify embed `audioPreview.url`** (reverse-engineered; spike measured 100% of resolved ids yielding a preview, 0 errors) → **iTunes `previewUrl`** → **Deezer** — played in a compact in-app `<audio>` player, uniform across sources.
+
+- [x] **No dead Play buttons (R1)** — the edge is resolved at page-load (`/api/edge-preview`), which returns the *first song with a confirmed preview*; the card only ever renders a real inline player or, when no song on the edge has any preview, an **Apple Music search** link (verified: 3-degree Sinatra path resolved all 3 hops inline).
+- [x] **Six-degrees chain (R6)** — vertical artist → compact song+player card → arrow → next artist → … → Kendrick; replaced the wide 3-song box. Compact `max-w-sm` cards.
+- [x] **Kendrick anchored as the base node (R7)** — transit-line viz with Kendrick larger + solid brand-green + connectors flowing into him (no crown); searched artist + intermediates are outline pills. Scrolls horizontally at 375px, no page overflow.
+- [x] **K.Dot score copy (R7)** — the degree count reads "{Artist}'s (k)dot score is: {N}", above the viz.
+- [x] **Attribution updated** — footer now credits Spotify + Apple Music + Deezer (the waterfall sources).
+
+> **⚠️ Source legality (R9):** iTunes/Deezer are sanctioned no-auth APIs. The Spotify embed `audioPreview.url` scrape is a documented community workaround — **gray-area vs. Spotify ToS**. It's gated behind a feasibility spike, kept demo-scoped, and iTunes remains a first-class non-scrape source so the app never *depends* on the scrape. Same pre-public guardrail deferral as above applies (the edge-preview endpoint makes upstream calls).

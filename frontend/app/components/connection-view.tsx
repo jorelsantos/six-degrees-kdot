@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchConnection, type Connection, type ConnectionResult } from "@/lib/api";
-import { SpotifyEmbed } from "./spotify-embed";
 import { PathHeadline } from "./path-headline";
+import { PreviewCard } from "./preview-player";
 
 export function ConnectionView({
   artistId,
@@ -45,13 +45,12 @@ export function ConnectionView({
 }
 
 function LoadingSkeleton() {
-  // Skeleton matches the final layout so the page assembles rather than pops.
   return (
     <div aria-busy="true" aria-label="Finding connection">
-      <div className="rh-skeleton mx-auto h-20 w-full max-w-sm" />
-      <div className="rh-skeleton mx-auto mt-5 h-14 w-64" />
-      <div className="rh-skeleton mx-auto mt-4 h-40 w-full" />
-      <div className="rh-skeleton mx-auto mt-4 h-14 w-64" />
+      <div className="rh-skeleton mx-auto h-16 w-72" />
+      <div className="rh-skeleton mx-auto mt-5 h-10 w-full max-w-sm" />
+      <div className="rh-skeleton mx-auto mt-6 h-14 w-56" />
+      <div className="rh-skeleton mx-auto mt-3 h-20 w-full max-w-sm" />
     </div>
   );
 }
@@ -100,41 +99,54 @@ function ConnectionResult({
     return (
       <div className="rounded-lg border border-brand bg-gradient-to-br from-brand/20 to-transparent p-8 text-center">
         <p className="text-headingSm font-bold text-brand">That&apos;s Kendrick Lamar himself.</p>
-        <p className="mt-1 text-content-secondary">Zero degrees of separation.</p>
+        <p className="mt-1 text-content-secondary">A (k)dot score of zero.</p>
       </div>
     );
   }
 
   const start = connection.path[0]?.name;
-  const label = connection.degrees === 1 ? "Degree" : "Degrees";
+  const lastIndex = connection.path.length - 1;
 
   return (
     <div>
       {showNotice && start && (
-        <p className="mb-4 text-center text-bodySm text-content-secondary">
-          Showing results for{" "}
-          <span className="font-bold text-brand">{start}</span>
+        <p className="mb-3 text-center text-bodySm text-content-secondary">
+          Showing results for <span className="font-bold text-brand">{start}</span>
         </p>
       )}
 
-      {/* Path headline / transit-line — leads the page with the full chain. */}
-      <PathHeadline path={connection.path} />
-
-      {/* Degree header — compact, no emoji (carries today's decisions). */}
-      <div className="rounded-lg border border-brand bg-gradient-to-br from-brand/15 to-transparent px-6 py-5 text-center">
-        <span className="text-display font-black tracking-tight">{connection.degrees}</span>
-        <span className="ml-2 align-middle text-bodySm text-content-secondary">
-          {label} of separation
-        </span>
+      {/* K.Dot score — the degree count, above the viz (plan 008 U5 copy). */}
+      <div className="text-center">
+        <p className="text-bodySm text-content-secondary">
+          <span className="font-bold text-content-primary">{start}</span>&rsquo;s{" "}
+          <span className="font-bold text-brand">(k)dot score</span> is
+        </p>
+        <p className="text-display font-black leading-none tracking-tight text-brand">
+          {connection.degrees}
+        </p>
       </div>
 
-      {/* Path: artist card, then the Collaborated-On block, alternating. */}
-      <div className="mt-6 space-y-4">
+      {/* Node viz — Kendrick anchored as the base. */}
+      <div className="mt-4">
+        <PathHeadline path={connection.path} />
+      </div>
+
+      {/* Six-degrees chain: artist → one preview card → arrow → next → Kendrick. */}
+      <div className="mt-6 flex flex-col items-center">
         {connection.path.map((artist, i) => (
-          <div key={artist.id}>
-            <ArtistCard name={artist.name} />
+          <div key={artist.id} className="flex w-full flex-col items-center">
+            <ChainNode name={artist.name} isBase={i === lastIndex} />
             {i < connection.connections.length && (
-              <CollabSection edge={connection.connections[i]} />
+              <>
+                <DownArrow />
+                <PreviewCard
+                  fromId={connection.connections[i].from.id}
+                  toId={connection.connections[i].to.id}
+                  fromName={connection.connections[i].from.name}
+                  toName={connection.connections[i].to.name}
+                />
+                <DownArrow />
+              </>
             )}
           </div>
         ))}
@@ -143,82 +155,20 @@ function ConnectionResult({
   );
 }
 
-function ArtistCard({ name }: { name: string }) {
+function ChainNode({ name, isBase }: { name: string; isBase: boolean }) {
   return (
-    <div className="mx-auto max-w-sm rounded-lg border border-brand bg-surface-raised px-5 py-4 text-center shadow-[var(--shadow-card)]">
-      <p className="text-headingSm font-black">{name}</p>
-      <div className="mx-auto mt-1.5 h-0.5 w-8 rounded-full bg-brand" />
+    <div
+      className={
+        isBase
+          ? "rounded-pill bg-brand px-6 py-2.5 text-center text-body font-black text-black shadow-[0_0_0_3px_rgba(30,215,96,0.25)]"
+          : "rounded-pill border border-border-strong bg-surface-raised px-5 py-2 text-center text-bodySm font-bold text-content-primary"
+      }
+    >
+      {name}
     </div>
   );
 }
 
-function CollabSection({
-  edge,
-}: {
-  edge: Connection["connections"][number];
-}) {
-  const from = edge.from.name;
-  const to = edge.to.name;
-  const details = edge.song_details.length
-    ? edge.song_details
-    : edge.songs.map((s) => ({
-        id: -1, // legacy fallback (no song_details) — not lazily resolvable
-        name: s,
-        collaborators: [] as string[],
-        spotify_track_id: null as string | null,
-      }));
-  const shown = details.slice(0, 3);
-  const more = details.length - shown.length;
-
-  return (
-    <div className="my-4">
-      <div className="text-center">
-        <span className="inline-block rounded-pill border border-brand bg-brand/10 px-4 py-1.5 text-caption font-bold uppercase tracking-[0.1em] text-brand">
-          Collaborated On
-        </span>
-        <p className="mt-2 text-bodySm text-content-secondary">
-          {from} <span className="text-content-tertiary">×</span> {to}
-        </p>
-      </div>
-
-      <div className="mt-3 rounded-lg bg-surface-raised p-4 shadow-[var(--shadow-card)]">
-        {shown.map((song, i) => {
-          const endpoints = new Set([from.toLowerCase(), to.toLowerCase()]);
-          const others = song.collaborators.filter((c) => !endpoints.has(c.toLowerCase()));
-          return (
-            <div
-              key={song.name + i}
-              className="border-b border-border-subtle py-3 last:border-b-0"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-brand">♪</span>
-                <span className="font-medium">{song.name}</span>
-              </div>
-              {others.length > 0 && (
-                <p className="ml-6 mt-0.5 text-caption text-content-tertiary">
-                  with {others.slice(0, 6).join(", ")}
-                  {others.length > 6 ? "…" : ""}
-                </p>
-              )}
-              {/* Render for every real song: a resolved id plays immediately;
-                  an unresolved one (id >= 0) resolves lazily on Play (plan 007).
-                  Legacy fallback rows (id < 0) can't resolve, so skip them. */}
-              {(song.spotify_track_id || song.id >= 0) && (
-                <SpotifyEmbed
-                  trackId={song.spotify_track_id}
-                  songId={song.id}
-                  song={song.name}
-                />
-              )}
-            </div>
-          );
-        })}
-        {more > 0 && (
-          <p className="mt-3 text-center text-caption italic text-content-tertiary">
-            +{more} more collaboration{more > 1 ? "s" : ""}
-          </p>
-        )}
-      </div>
-    </div>
-  );
+function DownArrow() {
+  return <div aria-hidden="true" className="my-1 h-4 w-[3px] rounded bg-brand/50" />;
 }
