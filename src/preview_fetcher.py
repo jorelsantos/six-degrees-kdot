@@ -45,6 +45,7 @@ class Preview:
     store_url: Optional[str]  # link-out to the full track (Apple Music / Deezer)
     matched_title: Optional[str] = None
     matched_artist: Optional[str] = None
+    artwork_url: Optional[str] = None  # album cover thumbnail
 
 
 # Process-lifetime cache keyed by (song, artists-tuple). Values are Preview | None.
@@ -120,12 +121,17 @@ def _try_itunes(song_name: str, artist_names: List[str], timeout: float) -> Opti
         if not preview:
             continue
         if _accept(song_name, artist_names, track.get("trackName", ""), track.get("artistName", "")):
+            # artworkUrl100 is 100px; bump to 300px for a crisper thumbnail.
+            art = track.get("artworkUrl100")
+            if art:
+                art = art.replace("100x100", "300x300")
             return Preview(
                 preview_url=preview,
                 provider="itunes",
                 store_url=track.get("trackViewUrl"),
                 matched_title=track.get("trackName"),
                 matched_artist=track.get("artistName"),
+                artwork_url=art,
             )
     return None
 
@@ -150,6 +156,7 @@ def _try_deezer(song_name: str, artist_names: List[str], timeout: float) -> Opti
                 store_url=track.get("link"),
                 matched_title=track.get("title"),
                 matched_artist=artist,
+                artwork_url=(track.get("album") or {}).get("cover_medium"),
             )
     return None
 

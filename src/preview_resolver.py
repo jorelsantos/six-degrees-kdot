@@ -72,7 +72,7 @@ def _fetcher_tier(source: str, fn, title: str, artists: List[str],
     return ResolvedPreview(
         source=source,
         audio_url=p.preview_url,
-        artwork_url=None,
+        artwork_url=getattr(p, "artwork_url", None),
         matched_title=p.matched_title,
         matched_artist=p.matched_artist,
         store_url=p.store_url,

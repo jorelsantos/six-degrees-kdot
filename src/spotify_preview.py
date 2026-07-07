@@ -25,9 +25,25 @@ _BROWSER_UA = (
 )
 DEFAULT_TIMEOUT = 8.0
 
-# audioPreview.url is the playable mp3; i.scdn.co is Spotify's cover-art CDN.
+# audioPreview.url is the playable mp3. Cover art lives on i.scdn.co (legacy) or
+# image-cdn-*.spotifycdn.com (current); the id suffix encodes size — 00001e02 ≈
+# 300px (crisp for a small thumb), 00004851 ≈ 64px, 0000b273 ≈ 640px.
 _AUDIO_RE = re.compile(r'"audioPreview"\s*:\s*\{\s*"url"\s*:\s*"([^"]+)"')
-_ART_RE = re.compile(r'https://i\.scdn\.co/image/[A-Za-z0-9]+')
+_ART_RE = re.compile(
+    r'https://(?:i\.scdn\.co|[a-z0-9-]+\.spotifycdn\.com)/image/[a-z0-9]+'
+)
+
+
+def _best_artwork(html: str) -> Optional[str]:
+    """Pick a reasonably-sized cover-art URL from the embed, preferring the
+    ~300px variant, else any match."""
+    urls = _ART_RE.findall(html)
+    if not urls:
+        return None
+    for u in urls:
+        if "00001e02" in u:  # ~300px — ideal for a small thumbnail
+            return u
+    return urls[0]
 
 # Process-lifetime cache keyed by track id. Values are {'audio_url','artwork_url'} | None.
 _CACHE: dict = {}
@@ -66,8 +82,7 @@ def scrape_preview(
         if html and "__NEXT_DATA__" in html:
             m = _AUDIO_RE.search(html)
             if m and m.group(1) and m.group(1) != "null":
-                art = _ART_RE.search(html)
-                result = {"audio_url": m.group(1), "artwork_url": art.group(0) if art else None}
+                result = {"audio_url": m.group(1), "artwork_url": _best_artwork(html)}
     except (requests.RequestException, ValueError):
         result = None
 

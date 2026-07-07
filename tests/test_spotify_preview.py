@@ -26,6 +26,23 @@ def test_scrape_hit_returns_audio_and_artwork():
     assert r["artwork_url"] == "https://i.scdn.co/image/deadbeef"
 
 
+_HTML_CDN_ART = (
+    '<html><script id="__NEXT_DATA__" type="application/json">'
+    '{"entity":{"audioPreview":{"url":"https://p.scdn.co/mp3-preview/zzz"},'
+    '"image":[{"url":"https://image-cdn-ak.spotifycdn.com/image/ab67616d0000b273aaa"},'
+    '{"url":"https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e02aaa"},'
+    '{"url":"https://image-cdn-ak.spotifycdn.com/image/ab67616d00004851aaa"}]}}'
+    '</script></html>'
+)
+
+
+def test_scrape_picks_300px_art_from_spotifycdn_host():
+    r = spotify_preview.scrape_preview("cdn", fetch=lambda tid, to: _HTML_CDN_ART)
+    assert r["audio_url"] == "https://p.scdn.co/mp3-preview/zzz"
+    # prefers the ~300px (00001e02) variant on the current CDN host
+    assert r["artwork_url"] == "https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e02aaa"
+
+
 def test_scrape_null_preview_returns_none():
     assert spotify_preview.scrape_preview("t2", fetch=lambda tid, to: _HTML_NULL) is None
 
