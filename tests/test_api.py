@@ -239,7 +239,7 @@ def test_edge_preview_returns_first_previewable_song(client, monkeypatch):
     from preview_resolver import ResolvedPreview
     monkeypatch.setattr(main, "_spotify_token", lambda: None)
     monkeypatch.setattr(
-        main, "resolve_preview",
+        main, "resolve_waterfall",
         lambda title, artists, spotify_track_id=None, **k: ResolvedPreview(
             source="itunes", audio_url="https://audio.example/x.m4a", matched_title=title),
     )
@@ -255,7 +255,7 @@ def test_edge_preview_returns_first_previewable_song(client, monkeypatch):
 def test_edge_preview_apple_fallback_when_no_preview(client, monkeypatch):
     import main
     monkeypatch.setattr(main, "_spotify_token", lambda: None)
-    monkeypatch.setattr(main, "resolve_preview", lambda *a, **k: None)
+    monkeypatch.setattr(main, "resolve_waterfall", lambda *a, **k: None)
     body = client.get("/api/edge-preview", params={"a": "g1", "b": "kendrick"}).json()
     assert body["source"] is None
     assert body["song"] == "Some Song"
@@ -271,7 +271,7 @@ def test_edge_preview_persists_none_and_skips_recheck(client, monkeypatch):
         calls["n"] += 1
         return None
 
-    monkeypatch.setattr(main, "resolve_preview", fake)
+    monkeypatch.setattr(main, "resolve_waterfall", fake)
     client.get("/api/edge-preview", params={"a": "g1", "b": "kendrick"})  # persists 'none'
     after_first = calls["n"]
     client.get("/api/edge-preview", params={"a": "g1", "b": "kendrick"})  # song now 'none' → skipped

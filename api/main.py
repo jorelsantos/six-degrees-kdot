@@ -43,7 +43,9 @@ from preview_fetcher import get_preview  # noqa: E402
 from spotify_enrich import (  # noqa: E402
     get_client_token, search_track, _build_query, _resolve_track_id, RateLimited,
 )
-from preview_resolver import resolve_preview, apple_search_url  # noqa: E402
+# Aliased: the /api/resolve-preview endpoint function below is also named
+# resolve_preview and would shadow this import (name collision).
+from preview_resolver import resolve_preview as resolve_waterfall, apple_search_url  # noqa: E402
 
 
 def _load_dotenv() -> None:
@@ -341,7 +343,7 @@ def edge_preview(a: str, b: str) -> EdgePreviewResponse:
                     db.set_spotify_track_id(s["id"], resolved)
                     tid = None if resolved == NO_TRACK_SENTINEL else resolved
 
-        pv = resolve_preview(s["name"], s["collaborators"], spotify_track_id=tid)
+        pv = resolve_waterfall(s["name"], s["collaborators"], spotify_track_id=tid)
         if unchecked:
             db.set_preview_source(s["id"], pv.source if pv else "none")
         if pv:
