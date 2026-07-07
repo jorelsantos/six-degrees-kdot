@@ -63,7 +63,9 @@ Enumerated from `app.py` and verified in the live preview (desktop + 375px mobil
 - [x] **Path headline / transit-line** — the chain leads the connection page ("Larry June → Dom Kennedy → Kendrick Lamar"); 1-degree and 2-degree chains verified; scrolls horizontally at 375px.
 - [x] **Compact, icon-led search bar** — narrower `max-w-md`, leading search icon; typeahead / keyboard nav / auto-run / notice behavior unchanged (dumb-renders API order).
 
-**Verification contract met (plan 004):** Python + API suite 98 green (incl. `tests/test_spotify_enrich.py`, `tests/test_api.py`); the live preview confirms the chrome, the compact search + typeahead, the path headline, the working Spotify embed ("Slow Down" plays), and graceful no-id degrade — at desktop + 375px, no console errors; **zero runtime Spotify API calls** (only the sanctioned embed iframe URL + our own `/api/*`); Streamlit app still boots on demand (untouched).
+**Verification contract met (plan 004):** Python + API suite 98 green (incl. `tests/test_spotify_enrich.py`, `tests/test_api.py`); the live preview confirms the chrome, the compact search + typeahead, the path headline, the working Spotify embed ("Slow Down" plays), and graceful no-id degrade — at desktop + 375px, no console errors; **zero runtime Spotify API calls** (only the sanctioned embed iframe URL + our own `/api/*`).
+
+> **Superseded by plan 010:** the legacy Streamlit app (`app.py`) has been **retired** — the Next.js frontend + FastAPI engine are the whole app now, so the old "Streamlit still boots" regression gate no longer applies. The top transit-line / path headline (plan 004) was also removed; the vertical six-degrees chain is the sole path visualization, now with per-artist photos.
 
 ### Added in plan 007 (Path B — lazy resolve-on-Play previews)
 
@@ -96,3 +98,20 @@ The preview card now mirrors a real Spotify card, and the flow is calmer.
 - [x] **Calmer flow** — toned down the transit-line + chain (thinner/dimmer connectors, base node without the glow ring, smaller/desaturated K.Dot number) while keeping Kendrick the clear anchored base.
 
 > **⚠️ Year caveat (KTD3):** the year is the preview source's release date — it can reflect a reissue/compilation rather than the original collaboration (e.g. the "Topsy" comp). The authoritative original year is MusicBrainz's first-release-date, deferred (needs an ingest).
+
+### Added in plan 010 (artist photos + simplified header + Streamlit retirement)
+
+Each artist in the six-degrees chain now shows a photo next to their name, from a
+coverage waterfall resolved server-side (`src/artist_photo.py`) and persisted per
+artist (`artists.photo_url`) so each is resolved at most once.
+
+- [x] **Artist photos in the chain** — a rounded avatar on each `ChainNode`. Source waterfall (MBID-exact first, then name-matched): **Wikidata `P18` → Commons** → **TheAudioDB** (`artist-mb.php` by MBID) → **Deezer** artist image (by name, guarded by an **exact normalized-name** match, not substring — a wrong face is worse than the fallback).
+- [x] **Graceful fallback** — no-photo artists (and any runtime image-load failure, via `onError`) render a deterministic initials circle (initials + an MBID-hashed muted color), never a broken image. Verified live: Drayz → "DR" circle while Nas/Busta Rhymes/Kendrick show real photos in the same 3-degree chain.
+- [x] **Simplified placeholder** — the search box reads "Search an artist" (dropped the "e.g. Drake, SZA…" examples).
+- [x] **Top transit-line removed** — `PathHeadline` (plan 004) is gone; the vertical chain is the sole path viz. The "(k)dot score" header stays.
+
+> **🖼️ Image attribution / licensing (plan 010 Risks):** *Not legal advice.* **Wikidata `P18`** points to **Wikimedia Commons** images — mostly free licenses, but terms vary (many are **CC-BY / CC-BY-SA** and want attribution), *not* uniformly CC0 (Wikidata's *data* is CC0; the images are not). **TheAudioDB** and **Deezer** artist images are hotlinked from their CDNs under their respective terms. Hotlinking is fine for this demo; **for a public launch, add a per-image attribution line and consider caching/proxying** the images (and revisit the Commons/CDN terms). This is the same demo-scoped posture as the plan-008 preview scrape. Spotify artist images are deliberately **not** used (ToS gray area) — the sanctioned/CC sources above give broad coverage without it.
+
+> **📊 Coverage (measured, plan 010 U5):** a 50-artist random sample of the long tail (degree ≥ 1, spread across the id space) resolved **~64%** to a photo — Deezer 56%, Wikidata 6%, TheAudioDB 2%, and ~36% falling back. Prominent artists (whom users actually traverse) resolve far higher: the Kendrick / Freddie Gibbs / Dom Kennedy / Larry June probe was 100%. So real chains read as well-populated, with the initials fallback catching the obscure tail. A full offline enrichment pass over all ~120k artists is deferred (see the plan's Deferred section).
+
+> **Experimental units U3 (dim artist-photo background) and U4 (float-in motion) were evaluated and deliberately skipped.** U3 (a dim photo behind each artist→song block) risks fighting the plan-009 album-color card that already themes each hop; U4 (entrance motion) is subjective "feel" the plan itself flags as off-brand vs. the deliberately static Spotify aesthetic. Both are low-value / clash-prone for an unattended build and are cleanly left for a future in-person design pass (the DoD permits an explicit skip). No motion was added, so `prefers-reduced-motion` needs no new handling here.

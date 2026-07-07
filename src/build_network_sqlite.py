@@ -8,7 +8,7 @@ this crawler and its data/collaboration_network.db output are kept as a
 reversible fallback and comparison baseline, not the primary build path.
 
 This script builds the artist collaboration network and stores it in SQLite.
-Run this once to populate the database, then use the Streamlit app to query it.
+Run this once to populate the database, then use the web app to query it.
 
 Features:
 - Parallel processing using ThreadPoolExecutor

@@ -13,8 +13,8 @@ Design notes:
   the event loop and stall the typeahead. src/database.py opens a fresh SQLite
   connection per call, so the threadpool is safe.
 - src/ modules use flat imports (path_finder_sqlite does `from database import
-  ...`), so we replicate app.py's sys.path insert rather than importing src as
-  a package.
+  ...`), so we insert src/ on sys.path (below) rather than importing src as a
+  package.
 - Kendrick's node id is resolved from the active DB (MBID for the MusicBrainz
   build), never PathFinder's hardcoded legacy Spotify default — that default
   returns no-path for the entire MB graph.
@@ -33,13 +33,16 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# --- Import the engine the same way app.py does (flat imports in src/) --------
+# --- Import the engine via src/ on sys.path (flat imports in src/) ------------
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
-from database import CollaborationDatabase, disambiguate_labels, NO_TRACK_SENTINEL  # noqa: E402
+from database import (  # noqa: E402
+    CollaborationDatabase, disambiguate_labels, NO_TRACK_SENTINEL, PHOTO_NONE_SENTINEL,
+)
 from path_finder_sqlite import PathFinder  # noqa: E402
 from preview_fetcher import get_preview  # noqa: E402
+import artist_photo  # noqa: E402
 from spotify_enrich import (  # noqa: E402
     get_client_token, search_track, _build_query, _resolve_track_id, RateLimited,
 )
@@ -91,7 +94,7 @@ def _spotify_token() -> Optional[str]:
     _token_cache["exp"] = now + 3000.0  # ~50 min; tokens last ~60
     return token
 
-# --- DB path resolution mirrors app.py's resolve_db_path ----------------------
+# --- DB path resolution: MusicBrainz build if present, else legacy Spotify ----
 _DATA_DIR = _ROOT / "data"
 MB_DB_PATH = _DATA_DIR / "collaboration_network_mb.db"
 SPOTIFY_DB_PATH = _DATA_DIR / "collaboration_network.db"
@@ -235,15 +238,70 @@ def search(q: str, limit: int = 8) -> SearchResponse:
 @app.get("/api/connection", response_model=ConnectionResponse)
 def connection(artist_id: str) -> ConnectionResponse:
     """Path from an artist to Kendrick. 404 only when the artist id is unknown;
-    a known artist with no path returns 200 {"connection": null} (parity with
-    app.py — matters once the bootleg-edge filter can disconnect components)."""
+    a known artist with no path returns 200 {"connection": null} (the no-path
+    case matters once the bootleg-edge filter can disconnect components).
+
+    Each path artist is enriched with a `photo_url` (plan 010): unchecked
+    artists are resolved via the coverage waterfall, the result is persisted
+    (URL, or the "none" sentinel when every source missed; a transient failure
+    leaves the row NULL to retry later), and each node carries a normalized
+    `photo_url` (a real URL or null) for the chain avatar."""
     db = _get_db()
     if db.get_artist(artist_id) is None:
         raise HTTPException(status_code=404, detail="Artist not in network")
     if artist_id == _kendrick_id:
         return ConnectionResponse(connection={"degrees": 0, "path": [], "connections": [], "is_kendrick": True})
     conn = _finder.find_connection(artist_id, _kendrick_id)
+    if conn is not None:
+        _attach_photo_urls(db, conn.get("path", []))
     return ConnectionResponse(connection=conn)  # conn is None => no path, still 200
+
+
+def _attach_photo_urls(db: CollaborationDatabase, path: List[dict]) -> None:
+    """Enrich each path node ({id, name}) in place with a normalized `photo_url`
+    (a validated image URL or None). Reads the persisted cache, resolves only
+    unchecked artists through the waterfall (bounded by artist_photo's per-call
+    budget), and persists the outcome so each artist is resolved at most once.
+
+    Never raises — a resolver failure degrades to null photos (the chain shows
+    the initials/silhouette fallback), never a 500 on the core endpoint."""
+    if not path:
+        return
+    ids = [node["id"] for node in path]
+    cached = db.get_photo_urls(ids)  # {id: url | "none" | None}
+
+    unchecked = [
+        (node["id"], node.get("name", ""))
+        for node in path
+        if cached.get(node["id"]) is None
+    ]
+    resolved: dict = {}
+    if unchecked:
+        try:
+            resolved = artist_photo.resolve(unchecked)
+        except Exception:  # defensive: the resolver already swallows source errors
+            resolved = {}
+        persist: List[tuple] = []
+        for mbid, result in resolved.items():
+            if result == artist_photo.UNAVAILABLE:
+                continue  # leave NULL — retry on a later request
+            value = PHOTO_NONE_SENTINEL if result == artist_photo.NO_PHOTO else result
+            persist.append((mbid, value))
+        if persist:
+            db.set_photo_urls_bulk(persist)
+
+    for node in path:
+        raw = cached.get(node["id"])
+        if raw is None:  # was unchecked — use what we just resolved
+            raw = resolved.get(node["id"])
+        # Normalize to a real URL or null: the "none" sentinel and the
+        # NO_PHOTO/UNAVAILABLE tri-state markers all render as no photo.
+        if isinstance(raw, str) and raw not in (
+            PHOTO_NONE_SENTINEL, artist_photo.NO_PHOTO, artist_photo.UNAVAILABLE
+        ):
+            node["photo_url"] = raw
+        else:
+            node["photo_url"] = None
 
 
 @app.get("/api/preview", response_model=PreviewResponse)

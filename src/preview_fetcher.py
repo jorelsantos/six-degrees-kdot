@@ -7,8 +7,8 @@ no-auth source: iTunes Search API (primary), Deezer (fallback).
 
 Design notes:
 - Spotify deprecated `preview_url` for dev-mode apps on 2024-11-27, so the
-  old app.py path is likely already returning null. iTunes + Deezer are free,
-  need no credentials, and each return a 30s preview.
+  legacy Spotify preview path is likely already returning null. iTunes + Deezer
+  are free, need no credentials, and each return a 30s preview.
 - Preview URLs are NOT persisted (iTunes is stream-only; Deezer URLs are
   signed/expiring). We fetch live per query and keep only a small in-process
   cache to avoid duplicate lookups within a single render.

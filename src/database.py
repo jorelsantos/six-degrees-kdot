@@ -35,6 +35,12 @@ ENRICHED_COVERAGE_THRESHOLD = 0.9
 # checked") so the pass is resumable and re-runs make zero Spotify calls (R2).
 NO_TRACK_SENTINEL = "none"
 
+# Sentinel stored in artists.photo_url when the photo waterfall was fully
+# consulted and no source had an image (plan 010, KTD2). Distinct from NULL
+# ("unchecked, or a source errored — retry later") so a genuine no-photo artist
+# is never re-queried, while transient failures stay retryable.
+PHOTO_NONE_SENTINEL = "none"
+
 # Characters deleted outright by fold_name (intra-word marks: "B.I.G." -> "big",
 # "Lil’ Flip" -> "lil flip"). Everything else non-alphanumeric becomes a space
 # ("JAY‐Z" -> "jay z", "Tyler, The Creator" -> "tyler the creator").
@@ -151,6 +157,15 @@ class CollaborationDatabase:
             if "degree" not in existing_columns:
                 cursor.execute("ALTER TABLE artists ADD COLUMN degree INTEGER DEFAULT 0")
                 need_degree_refresh = True
+
+            # Migration guard: `photo_url` caches an artist's resolved photo
+            # (plan 2026-07-06-010, KTD2). NULL = unchecked OR a source errored
+            # last time (retry later); a validated image URL = resolved; the
+            # PHOTO_NONE_SENTINEL "none" = the full waterfall was consulted and
+            # every source missed (never re-queried). Same checked-vs-default
+            # idiom as spotify_track_id/preview_source.
+            if "photo_url" not in existing_columns:
+                cursor.execute("ALTER TABLE artists ADD COLUMN photo_url TEXT")
 
             # Collaborations table (edges)
             cursor.execute("""
@@ -806,6 +821,42 @@ class CollaborationDatabase:
             cursor.execute(
                 "UPDATE songs SET preview_source = ? WHERE id = ?",
                 (source, song_id))
+
+    def get_photo_urls(self, artist_ids: List[str]) -> Dict[str, Optional[str]]:
+        """Return {artist_id: photo_url} for the given ids, raw (a validated
+        image URL, the PHOTO_NONE_SENTINEL "none", or None = unchecked). Only
+        ids present in the DB appear in the result. Batched read for a
+        connection's path artists (plan 010, U1)."""
+        if not artist_ids:
+            return {}
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            placeholders = ",".join("?" for _ in artist_ids)
+            cursor.execute(
+                f"SELECT id, photo_url FROM artists WHERE id IN ({placeholders})",
+                list(artist_ids),
+            )
+            return {row["id"]: row["photo_url"] for row in cursor.fetchall()}
+
+    def set_photo_url(self, artist_id: str, photo_url: str) -> None:
+        """Persist a resolved photo URL (or the PHOTO_NONE_SENTINEL) for an
+        artist, marking the row checked so it's never re-resolved. An artist
+        left NULL (a transient source failure) is retried on a later request."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE artists SET photo_url = ? WHERE id = ?",
+                (photo_url, artist_id))
+
+    def set_photo_urls_bulk(self, rows: List[Tuple[str, str]]) -> None:
+        """Bulk variant of set_photo_url: rows of (artist_id, photo_url)."""
+        if not rows:
+            return
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany(
+                "UPDATE artists SET photo_url = ? WHERE id = ?",
+                [(photo_url, artist_id) for artist_id, photo_url in rows])
 
     def artist_exists(self, artist_id: str) -> bool:
         """Check if artist is in database."""

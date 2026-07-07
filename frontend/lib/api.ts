@@ -19,6 +19,9 @@ export interface SearchResponse {
 export interface ArtistRef {
   id: string;
   name: string;
+  // Resolved artist photo (plan 010). A validated image URL, or null when no
+  // source had one / it's still unchecked — the chain then shows the fallback.
+  photo_url?: string | null;
 }
 
 export interface SongDetail {

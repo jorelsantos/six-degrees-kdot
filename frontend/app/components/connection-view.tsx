@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchConnection, type Connection, type ConnectionResult } from "@/lib/api";
-import { PathHeadline } from "./path-headline";
 import { PreviewCard } from "./preview-player";
 
 export function ConnectionView({
@@ -126,16 +125,18 @@ function ConnectionResult({
         </p>
       </div>
 
-      {/* Node viz — Kendrick anchored as the base. */}
-      <div className="mt-4">
-        <PathHeadline path={connection.path} />
-      </div>
-
-      {/* Six-degrees chain: artist → one preview card → arrow → next → Kendrick. */}
-      <div className="mt-6 flex flex-col items-center">
+      {/* Six-degrees chain: artist → one preview card → arrow → next → Kendrick.
+          The vertical chain is the sole path viz now (the top transit-line was
+          removed in plan 010, R2 — it duplicated this). */}
+      <div className="mt-8 flex flex-col items-center">
         {connection.path.map((artist, i) => (
           <div key={artist.id} className="flex w-full flex-col items-center">
-            <ChainNode name={artist.name} isBase={i === lastIndex} />
+            <ChainNode
+              id={artist.id}
+              name={artist.name}
+              photoUrl={artist.photo_url ?? null}
+              isBase={i === lastIndex}
+            />
             {i < connection.connections.length && (
               <>
                 <DownArrow />
@@ -155,16 +156,90 @@ function ConnectionResult({
   );
 }
 
-function ChainNode({ name, isBase }: { name: string; isBase: boolean }) {
+function ChainNode({
+  id,
+  name,
+  photoUrl,
+  isBase,
+}: {
+  id: string;
+  name: string;
+  photoUrl: string | null;
+  isBase: boolean;
+}) {
   return (
     <div
       className={
         isBase
-          ? "rounded-pill bg-brand/90 px-6 py-2.5 text-center text-body font-bold text-black"
-          : "rounded-pill border border-border-strong bg-surface-raised px-5 py-2 text-center text-bodySm font-medium text-content-primary"
+          ? "flex items-center gap-2.5 rounded-pill bg-brand/90 py-1.5 pl-1.5 pr-5 text-body font-bold text-black"
+          : "flex items-center gap-2 rounded-pill border border-border-strong bg-surface-raised py-1.5 pl-1.5 pr-4 text-bodySm font-medium text-content-primary"
       }
     >
-      {name}
+      <ArtistAvatar id={id} name={name} photoUrl={photoUrl} isBase={isBase} />
+      <span>{name}</span>
+    </div>
+  );
+}
+
+// Deterministic initials for the no-photo fallback: first letters of the first
+// two words, or the first two chars of a single-word stage name ("Drake" → DR,
+// "SZA" → SZ). Never empty — degrades to "?" for a blank name.
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  const w = words[0] ?? "";
+  return (w.slice(0, 2) || "?").toUpperCase();
+}
+
+// Deterministic muted background for the initials circle, hashed from the MBID
+// so a given artist is always the same color (Q3). Dark/desaturated to sit
+// under white text and not fight the brand green.
+function avatarColor(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 42%, 32%)`;
+}
+
+// Artist photo (plan 010, R3). Shows the resolved photo, falling back to the
+// initials circle both when there's no URL AND when a persisted URL fails to
+// load at runtime (onError) — Commons/Deezer/TheAudioDB hotlinks can rot, and
+// KTD3 requires we never render a broken image.
+function ArtistAvatar({
+  id,
+  name,
+  photoUrl,
+  isBase,
+}: {
+  id: string;
+  name: string;
+  photoUrl: string | null;
+  isBase: boolean;
+}) {
+  const [broken, setBroken] = useState(false);
+  const size = isBase ? "h-9 w-9" : "h-8 w-8";
+
+  if (photoUrl && !broken) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- remote CDN photos
+      // (Commons/TheAudioDB/Deezer) aren't in images.remotePatterns; plain <img>
+      // mirrors the preview-player.tsx pattern and adds onError (which it lacks).
+      <img
+        src={photoUrl}
+        alt=""
+        onError={() => setBroken(true)}
+        className={`${size} shrink-0 rounded-full object-cover shadow-[0_2px_6px_rgba(0,0,0,0.35)]`}
+      />
+    );
+  }
+
+  return (
+    <div
+      aria-hidden="true"
+      style={{ background: avatarColor(id) }}
+      className={`${size} flex shrink-0 items-center justify-center rounded-full text-caption font-bold text-white/90`}
+    >
+      {initials(name)}
     </div>
   );
 }

@@ -1,12 +1,12 @@
 # Six Degrees of Kendrick Lamar
 
-A Streamlit web app that finds the shortest collaboration path between any artist and Kendrick Lamar — degrees of separation, the connecting path, and the specific songs at each step. Built with Python and SQLite; the collaboration graph is built from the **MusicBrainz** database dump (CC0), and 30-second song previews come from the free **iTunes Search API** (with a **Deezer** fallback). Styled after the Spotify UI.
+A web app that finds the shortest collaboration path between any artist and Kendrick Lamar — degrees of separation, the connecting path, and the specific songs at each step. A **Next.js** frontend renders a Spotify-styled UI over a **FastAPI** engine; the collaboration graph is built from the **MusicBrainz** database dump (CC0), and 30-second song previews come from the free **iTunes Search API** (with a **Deezer** fallback).
 
 > **Data sources (2026-07):** the graph was migrated from a Spotify crawl to a MusicBrainz-dump build (no API rate limits, complete data), and previews moved off Spotify's deprecated `preview_url` to iTunes/Deezer. **No Spotify credentials are required.** Every edge is a *shared recording* co-crediting two artists — that recording is the connecting song. Details: [`docs/plans/2026-07-04-001-feat-musicbrainz-graph-migration-plan.md`](docs/plans/2026-07-04-001-feat-musicbrainz-graph-migration-plan.md). The Spotify crawler is retained as a fallback but is no longer the primary path.
 
 Inspired by "Six Degrees of Kevin Bacon," this project explores how artists in hip-hop and music are connected through their collaborations.
 
-> **Project history:** this started as a University of Michigan SI 507 course final project (a terminal CLI app). The original course writeup is archived at [`docs/archive/`](docs/archive/). The app has since been rebuilt as a Streamlit web app on a SQLite-backed graph — this README reflects the current app, not the original CLI.
+> **Project history:** this started as a University of Michigan SI 507 course final project (a terminal CLI app). The original course writeup is archived at [`docs/archive/`](docs/archive/). It was then rebuilt as a Streamlit web app on a SQLite-backed graph, and has since been replatformed to a **Next.js frontend + FastAPI** engine (Streamlit has been retired). This README reflects the current app, not the original CLI.
 
 ## How It Works
 
@@ -22,13 +22,15 @@ Inspired by "Six Degrees of Kevin Bacon," this project explores how artists in h
 # 1. Clone and install
 git clone https://github.com/jorelsantos-um/six-degrees-kdot.git
 cd six-degrees-kdot
-pip install -r requirements.txt
+pip install -r requirements.txt          # FastAPI engine deps
+(cd frontend && npm install)             # Next.js frontend deps
 
-# 2. Run the app — no API credentials needed
-streamlit run app.py
+# 2. Run both processes — no API credentials needed
+uvicorn api.main:app --port 8000         # engine (terminal 1)
+(cd frontend && npm run dev)             # UI at http://localhost:3000 (terminal 2)
 ```
 
-No Spotify (or any) API key is required: the graph is pre-built into SQLite, and previews are fetched at query time from the free, no-auth iTunes/Deezer APIs. By default the app loads the MusicBrainz-built graph (`data/collaboration_network_mb.db`) if present, otherwise the retained Spotify-built graph. Override with the `RABBITHOLE_DB` env var.
+Open http://localhost:3000 — the Next.js dev server proxies `/api/*` to the FastAPI engine on :8000. No Spotify (or any) API key is required: the graph is pre-built into SQLite, and previews are fetched at query time from the free, no-auth iTunes/Deezer APIs. By default the engine loads the MusicBrainz-built graph (`data/collaboration_network_mb.db`) if present, otherwise the retained Spotify-built graph. Override with the `RABBITHOLE_DB` env var.
 
 ## Rebuilding the Network (Optional)
 
@@ -62,7 +64,8 @@ Edges come only from shared-recording co-credits on **Official** releases (bootl
 
 ## Architecture
 
-- **`app.py`** — Streamlit web app (entry point). Loads the SQLite database, runs path lookups, and renders the Spotify-styled UI.
+- **`api/main.py`** — FastAPI engine (entry point). Serializes search, pathfinding, preview, and artist-photo resolution over the SQLite graph; the single source of truth the frontend renders.
+- **`frontend/`** — Next.js app: the Spotify-styled UI. A dumb renderer of the API's output, proxying `/api/*` to the engine.
 - **`src/database.py`** — SQLite schema and query layer for the collaboration graph.
 - **`src/path_finder_sqlite.py`** — BFS shortest-path logic over the SQLite-backed graph.
 - **`src/musicbrainz_ingest.py`** — Builds the collaboration graph from the staged MusicBrainz dump (Official-release filter + co-credit edges) into `data/collaboration_network_mb.db`. **Primary build path.**
@@ -78,9 +81,9 @@ Edges come only from shared-recording co-credits on **Official** releases (bootl
 
 ## Requirements
 
-- Python 3.7+
+- Python 3.7+ and Node.js (for the Next.js frontend)
 - No API credentials required (the graph is pre-built; previews use free, no-auth iTunes/Deezer)
-- Dependencies: `requests`, `python-dotenv`, `streamlit` (see `requirements.txt`)
+- Python dependencies: `requests`, `python-dotenv`, `rapidfuzz`, `fastapi`, `uvicorn` (see `requirements.txt`); frontend deps via `frontend/package.json`
 
 ## Troubleshooting
 
@@ -94,14 +97,16 @@ Edges come only from shared-recording co-credits on **Official** releases (bootl
 - Expected for artists genuinely disconnected from Kendrick within the depth-2 graph (different eras/genres). Note MusicBrainz uses canonical artist names (e.g. "Ye", not "Kanye West"), so search by the canonical name.
 
 ### Module not found / import errors
-- Make sure you're running `streamlit run app.py` from the repo root
-- Reinstall dependencies: `pip install -r requirements.txt`
+- Make sure you're running `uvicorn api.main:app` from the repo root (the engine adds `src/` to the path)
+- Reinstall dependencies: `pip install -r requirements.txt` (and `npm install` in `frontend/`)
 
 ## Project Structure
 
 ```
 six-degrees-kdot/
-├── app.py                          # Streamlit app (entry point)
+├── api/
+│   └── main.py                     # FastAPI engine (entry point)
+├── frontend/                       # Next.js app (Spotify-styled UI)
 ├── requirements.txt
 ├── src/
 │   ├── musicbrainz_ingest.py       # MusicBrainz dump -> graph (primary builder)

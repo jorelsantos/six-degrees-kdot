@@ -15,7 +15,11 @@ import sys
 import pytest
 from fastapi.testclient import TestClient
 
+import artist_photo
+from artist_photo import NO_PHOTO, UNAVAILABLE
 from database import CollaborationDatabase
+
+_PHOTO_URL = "https://commons.wikimedia.org/wiki/Special:FilePath/Rihanna.jpg?width=320"
 
 
 @pytest.fixture()
@@ -127,6 +131,71 @@ def test_connection_known_but_no_path_is_200_null(client):
     r = client.get("/api/connection", params={"artist_id": "orphan"})
     assert r.status_code == 200
     assert r.json()["connection"] is None  # not a 404
+
+
+# --- Artist photos on the connection path (plan 010, U1) ---------------------
+
+def test_connection_attaches_and_persists_photo_urls(client, monkeypatch):
+    # Fake resolver: Rihanna gets a photo, Kendrick has none anywhere.
+    calls = []
+
+    def fake_resolve(artists, **kwargs):
+        calls.append(list(artists))
+        return {mbid: (_PHOTO_URL if mbid == "rihanna" else NO_PHOTO) for mbid, _ in artists}
+
+    monkeypatch.setattr(artist_photo, "resolve", fake_resolve)
+
+    rid = client.get("/api/search", params={"q": "Rihanna"}).json()["candidates"][0]["id"]
+    conn = client.get("/api/connection", params={"artist_id": rid}).json()["connection"]
+    by_id = {n["id"]: n for n in conn["path"]}
+    assert by_id["rihanna"]["photo_url"] == _PHOTO_URL  # resolved URL surfaced
+    assert by_id["kendrick"]["photo_url"] is None        # "none" normalizes to null
+    assert len(calls) == 1                               # both path artists resolved once
+
+    # Second request: everything is now checked (URL or "none"), so the resolver
+    # must not be consulted again — resolve-once, deploy-friendly (R4).
+    def boom_resolve(artists, **kwargs):
+        raise AssertionError("resolver called for already-checked artists")
+
+    monkeypatch.setattr(artist_photo, "resolve", boom_resolve)
+    conn2 = client.get("/api/connection", params={"artist_id": rid}).json()["connection"]
+    by_id2 = {n["id"]: n for n in conn2["path"]}
+    assert by_id2["rihanna"]["photo_url"] == _PHOTO_URL   # served from cache
+    assert by_id2["kendrick"]["photo_url"] is None        # "none" still not re-queried
+
+
+def test_connection_unavailable_is_not_persisted_and_retried(client, monkeypatch):
+    # A transient source failure comes back UNAVAILABLE → left NULL, so a later
+    # request retries rather than freezing the artist photoless.
+    calls = []
+
+    def flaky_resolve(artists, **kwargs):
+        calls.append(list(artists))
+        return {mbid: UNAVAILABLE for mbid, _ in artists}
+
+    monkeypatch.setattr(artist_photo, "resolve", flaky_resolve)
+    rid = client.get("/api/search", params={"q": "Rihanna"}).json()["candidates"][0]["id"]
+
+    conn = client.get("/api/connection", params={"artist_id": rid}).json()["connection"]
+    assert all(n["photo_url"] is None for n in conn["path"])  # degrades to null
+    assert len(calls) == 1
+
+    # Nothing was persisted, so the next request resolves the same artists again.
+    client.get("/api/connection", params={"artist_id": rid})
+    assert len(calls) == 2
+
+
+def test_connection_photo_resolver_failure_degrades_to_null(client, monkeypatch):
+    # Even if the resolver raises outright, the core endpoint still responds
+    # (photos are null, chain renders the fallback) — never a 500.
+    def raising_resolve(artists, **kwargs):
+        raise RuntimeError("resolver blew up")
+
+    monkeypatch.setattr(artist_photo, "resolve", raising_resolve)
+    rid = client.get("/api/search", params={"q": "Rihanna"}).json()["candidates"][0]["id"]
+    r = client.get("/api/connection", params={"artist_id": rid})
+    assert r.status_code == 200
+    assert all(n["photo_url"] is None for n in r.json()["connection"]["path"])
 
 
 def test_connection_kendrick_himself(client):

@@ -14,8 +14,8 @@ python3 -m uvicorn api.main:app --port 8000
 cd frontend && npm run dev
 ```
 
-Then open http://localhost:3000. The Streamlit app (`app.py`) is untouched and
-still runs independently.
+Then open http://localhost:3000. This Next.js frontend + the FastAPI engine are
+the whole app (the legacy Streamlit UI was retired in plan 010).
 
 ---
 

@@ -2,18 +2,6 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "rabbit-hole",
-      "runtimeExecutable": "streamlit",
-      "runtimeArgs": ["run", "app.py", "--server.headless", "true", "--server.port", "8501"],
-      "port": 8501
-    },
-    {
-      "name": "rabbit-hole-test",
-      "runtimeExecutable": "streamlit",
-      "runtimeArgs": ["run", "app.py", "--server.headless", "true", "--server.port", "8502"],
-      "port": 8502
-    },
-    {
       "name": "rabbit-hole-frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],

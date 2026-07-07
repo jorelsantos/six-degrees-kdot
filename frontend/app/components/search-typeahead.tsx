@@ -123,7 +123,7 @@ export function SearchTypeahead() {
           aria-activedescendant={active >= 0 ? `sugg-${active}` : undefined}
           autoFocus
           value={query}
-          placeholder="Search an artist — e.g. Drake, SZA…"
+          placeholder="Search an artist"
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
           onFocus={() => candidates.length > 0 && setOpen(true)}

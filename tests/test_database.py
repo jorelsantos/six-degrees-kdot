@@ -11,6 +11,7 @@ from database import (
     CollaborationDatabase,
     CROSS_TIER_OVERRIDE_FACTOR,
     FUZZY_MIN_RESULTS,
+    PHOTO_NONE_SENTINEL,
     disambiguate_labels,
     fold_name,
 )
@@ -18,6 +19,49 @@ from database import (
 
 def _db(tmp_path):
     return CollaborationDatabase(str(tmp_path / "aliases.db"))
+
+
+# --- artists.photo_url persistence (plan 010, U1 / KTD2) ---------------------
+
+def test_photo_url_migration_and_roundtrip(tmp_path):
+    db = _db(tmp_path)
+    db.add_artist("a1", "Kendrick Lamar")
+    db.add_artist("a2", "Dom Kennedy")
+    db.add_artist("a3", "Flaky Upstream")
+
+    # Fresh column: every artist is unchecked (NULL).
+    assert db.get_photo_urls(["a1", "a2", "a3"]) == {"a1": None, "a2": None, "a3": None}
+
+    url = "https://commons.wikimedia.org/wiki/Special:FilePath/K.jpg?width=320"
+    db.set_photo_url("a1", url)                    # resolved URL
+    db.set_photo_url("a2", PHOTO_NONE_SENTINEL)    # full waterfall missed
+    # a3 stays NULL (a transient failure — left retryable)
+
+    got = db.get_photo_urls(["a1", "a2", "a3"])
+    assert got["a1"] == url
+    assert got["a2"] == PHOTO_NONE_SENTINEL
+    assert got["a3"] is None
+
+
+def test_photo_url_bulk_set(tmp_path):
+    db = _db(tmp_path)
+    db.add_artist("a1", "Alpha")
+    db.add_artist("a2", "Beta")
+    db.set_photo_urls_bulk([
+        ("a1", "https://r2.theaudiodb.com/x.jpg"),
+        ("a2", PHOTO_NONE_SENTINEL),
+    ])
+    got = db.get_photo_urls(["a1", "a2"])
+    assert got["a1"] == "https://r2.theaudiodb.com/x.jpg"
+    assert got["a2"] == PHOTO_NONE_SENTINEL
+
+
+def test_get_photo_urls_empty_and_unknown_ids(tmp_path):
+    db = _db(tmp_path)
+    db.add_artist("a1", "Alpha")
+    assert db.get_photo_urls([]) == {}
+    # Unknown ids simply don't appear in the result.
+    assert db.get_photo_urls(["nope"]) == {}
 
 
 def test_alias_exact_lookup_resolves_to_canonical(tmp_path):
@@ -364,10 +408,20 @@ def test_disambiguate_labels_qualifier_and_tiebreak():
     assert len({l.casefold() for l in labels}) == len(labels)  # visually distinct
 
 
-def test_guard_submit_path_uses_resolve_artist():
-    """KTD1 guard: app.py's submit path must resolve via resolve_artist —
-    pins against reintroducing the two-path split (the headline bug)."""
+def test_guard_search_path_uses_resolve_artist():
+    """Guard (retargeted from the retired app.py test — plan 010 U6, Streamlit
+    decommission): the API `/api/search` endpoint is the single resolution entry
+    point for both the suggestions list and the submit button now, and it must
+    resolve through `resolve_artist`. Pins against reintroducing the two-path
+    split (the headline bug: suggestions via resolve_artist, submit via
+    get_artist_by_name). The Next.js submit path calls this endpoint, so this is
+    the modern home of the guard app.py used to carry."""
     import pathlib
-    src = (pathlib.Path(__file__).parent.parent / "app.py").read_text()
-    assert "db.resolve_artist(artist_name" in src
-    assert "db.get_artist_by_name(artist_name)" not in src
+    src = (pathlib.Path(__file__).parent.parent / "api" / "main.py").read_text()
+    # The search endpoint resolves via the single pipeline...
+    assert "db.resolve_artist(" in src
+    # ...and does not resolve a search query through the exact-name-only path
+    # (get_artist_by_name is still used to look up Kendrick's id by name, so we
+    # assert the query variable `q` is not resolved through it, not that the
+    # function is absent entirely).
+    assert "get_artist_by_name(q" not in src
