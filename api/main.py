@@ -43,6 +43,7 @@ from preview_fetcher import get_preview  # noqa: E402
 from spotify_enrich import (  # noqa: E402
     get_client_token, search_track, _build_query, _resolve_track_id, RateLimited,
 )
+from preview_resolver import resolve_preview, apple_search_url  # noqa: E402
 
 
 def _load_dotenv() -> None:
@@ -179,6 +180,18 @@ class ResolvePreviewResponse(BaseModel):
     spotify_track_id: Optional[str]
 
 
+class EdgePreviewResponse(BaseModel):
+    # The first previewable song on an edge + its playable preview (plan 008).
+    # song is None only when the edge has no songs at all. When no song has any
+    # preview, source/audio_url are None and fallback_url is the Apple search.
+    song: Optional[str]
+    source: Optional[str]          # 'spotify' | 'itunes' | 'deezer' | None
+    audio_url: Optional[str]       # directly-playable mp3/m4a (re-resolved fresh)
+    artwork_url: Optional[str]
+    store_url: Optional[str]
+    fallback_url: Optional[str]    # Apple Music search link when no preview exists
+
+
 # --- Endpoints ----------------------------------------------------------------
 @app.get("/api/health")
 def health() -> dict:
@@ -285,4 +298,62 @@ def resolve_preview(song_id: int) -> ResolvePreviewResponse:
     db.set_spotify_track_id(song_id, track_id)
     return ResolvePreviewResponse(
         spotify_track_id=None if track_id == NO_TRACK_SENTINEL else track_id,
+    )
+
+
+@app.get("/api/edge-preview", response_model=EdgePreviewResponse)
+def edge_preview(a: str, b: str) -> EdgePreviewResponse:
+    """Plan 008, U3 — the first song on an edge (a,b) that has a playable preview,
+    resolved at page-load so the UI only ever shows previewable songs (R1: no
+    dead buttons). Walks the edge's ordered songs; for each unchecked one, lazily
+    resolves a Spotify track id (once) then runs the preview waterfall
+    (spotify-scrape → iTunes → Deezer), persisting the winning source (or 'none').
+    Returns the first hit; if no song has any preview, returns the Apple Music
+    search fallback (R5). The audio URL is re-resolved fresh each call (URLs
+    expire — we persist source/identity, not the volatile URL: KTD3).
+
+    Demo-scoped: makes upstream calls; needs public guardrails before deploy."""
+    db = _get_db()
+    songs = db.get_collaboration_song_details(a, b)
+    if not songs:
+        return EdgePreviewResponse(song=None, source=None, audio_url=None,
+                                   artwork_url=None, store_url=None, fallback_url=None)
+
+    token: Optional[str] = None
+    token_tried = False
+    for s in songs:
+        if s.get("preview_source") == "none":
+            continue  # already checked — no preview anywhere
+        tid = s["spotify_track_id"]  # real id or None (sentinel normalized)
+        unchecked = s.get("preview_source") is None
+
+        if unchecked and tid is None:
+            # Lazily resolve a Spotify track id once (reuses the plan-007 seam).
+            if not token_tried:
+                token, token_tried = _spotify_token(), True
+            if token:
+                try:
+                    cands = search_track(_build_query(s["name"], s["collaborators"]), token)
+                    resolved = _resolve_track_id(s["name"], s["collaborators"], cands)
+                except (RateLimited, requests.RequestException, ValueError):
+                    resolved = None
+                if resolved:
+                    db.set_spotify_track_id(s["id"], resolved)
+                    tid = None if resolved == NO_TRACK_SENTINEL else resolved
+
+        pv = resolve_preview(s["name"], s["collaborators"], spotify_track_id=tid)
+        if unchecked:
+            db.set_preview_source(s["id"], pv.source if pv else "none")
+        if pv:
+            return EdgePreviewResponse(
+                song=s["name"], source=pv.source, audio_url=pv.audio_url,
+                artwork_url=pv.artwork_url, store_url=pv.store_url, fallback_url=None,
+            )
+
+    # No previewable song on this edge → Apple Music search fallback (R5).
+    top = songs[0]
+    artist = top["collaborators"][0] if top["collaborators"] else ""
+    return EdgePreviewResponse(
+        song=top["name"], source=None, audio_url=None, artwork_url=None,
+        store_url=None, fallback_url=apple_search_url(top["name"], artist),
     )

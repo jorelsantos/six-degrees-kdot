@@ -194,6 +194,16 @@ class CollaborationDatabase:
             if "spotify_track_id" not in song_cols:
                 cursor.execute("ALTER TABLE songs ADD COLUMN spotify_track_id TEXT")
 
+            # Migration guard: `preview_source` records which waterfall tier a
+            # song's preview resolved to (plan 2026-07-06-008, KTD3): NULL = not
+            # yet checked; 'spotify'|'itunes'|'deezer' = resolved to that source
+            # (the audio URL is re-resolved fresh at serve, since preview URLs
+            # expire — we persist the identity/source, not the volatile URL);
+            # 'none' = checked, no preview anywhere. This is what lets the
+            # edge-preview endpoint skip re-walking already-checked songs.
+            if "preview_source" not in song_cols:
+                cursor.execute("ALTER TABLE songs ADD COLUMN preview_source TEXT")
+
             # Artist aliases (alternate names -> canonical artist node). One row
             # per (artist, alias); lets a search for "Kanye West" resolve to the
             # canonical "Ye" node. Populated only by the MusicBrainz build; the
@@ -787,6 +797,16 @@ class CollaborationDatabase:
                 "UPDATE songs SET spotify_track_id = ? WHERE id = ?",
                 [(track_id, song_id) for song_id, track_id in rows])
 
+    def set_preview_source(self, song_id: int, source: str) -> None:
+        """Persist which waterfall tier a song's preview resolved to
+        ('spotify'|'itunes'|'deezer'|'none'), marking it checked so the
+        edge-preview endpoint skips re-walking it (plan 008, KTD3)."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE songs SET preview_source = ? WHERE id = ?",
+                (source, song_id))
+
     def artist_exists(self, artist_id: str) -> bool:
         """Check if artist is in database."""
         with self._get_connection() as conn:
@@ -888,7 +908,7 @@ class CollaborationDatabase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT s.id, s.song_name, s.collaborators, s.spotify_track_id
+                SELECT s.id, s.song_name, s.collaborators, s.spotify_track_id, s.preview_source
                 FROM songs s
                 JOIN collaborations c ON s.collaboration_id = c.id
                 WHERE c.artist1_id = ? AND c.artist2_id = ?
@@ -910,6 +930,7 @@ class CollaborationDatabase:
                     'name': row['song_name'],
                     'collaborators': collabs,
                     'spotify_track_id': track_id,
+                    'preview_source': row['preview_source'],  # None|spotify|itunes|deezer|none
                 })
             return details
 
@@ -923,7 +944,7 @@ class CollaborationDatabase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT id, song_name, collaborators, spotify_track_id
+                SELECT id, song_name, collaborators, spotify_track_id, preview_source
                 FROM songs WHERE id = ?
             """, (song_id,))
             row = cursor.fetchone()
@@ -938,6 +959,7 @@ class CollaborationDatabase:
                 'name': row['song_name'],
                 'collaborators': collabs,
                 'spotify_track_id': row['spotify_track_id'],
+                'preview_source': row['preview_source'],
             }
 
     def get_stats(self) -> Dict:
