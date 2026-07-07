@@ -14,8 +14,11 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored to repo root: these are Python venv/build dirs at the top level.
+# Unanchored, `lib/` also swallowed `frontend/lib/` (Next.js source) — a real bug
+# that kept frontend/lib/api.ts out of git entirely.
+/lib/
+/lib64/
 parts/
 sdist/
 var/
