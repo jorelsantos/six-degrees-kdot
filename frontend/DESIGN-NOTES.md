@@ -86,3 +86,13 @@ The Spotify iframe embed (plan 004) is **retired** as the player. Previews now c
 - [x] **Attribution updated** — footer now credits Spotify + Apple Music + Deezer (the waterfall sources).
 
 > **⚠️ Source legality (R9):** iTunes/Deezer are sanctioned no-auth APIs. The Spotify embed `audioPreview.url` scrape is a documented community workaround — **gray-area vs. Spotify ToS**. It's gated behind a feasibility spike, kept demo-scoped, and iTunes remains a first-class non-scrape source so the app never *depends* on the scrape. Same pre-public guardrail deferral as above applies (the edge-preview endpoint makes upstream calls).
+
+### Added in plan 009 (rich preview card + calmer flow)
+
+The preview card now mirrors a real Spotify card, and the flow is calmer.
+
+- [x] **Full song details** — cover + song title + credited artist line (MusicBrainz lineup, e.g. "Baby Keem, Kendrick Lamar, Sam Dew") + album + year + source label. Album/year come from the audio source; the Spotify embed lacks album, so it's **backfilled from a free iTunes metadata lookup**.
+- [x] **Album-color-adaptive card** — a `dominant_color` is extracted server-side (Pillow, `src/album_color.py`) and used as the card background under a dark scrim (`linear-gradient(rgba(0,0,0,.30), rgba(0,0,0,.58)), <color>`) so white text stays legible for any cover. Bigger 72px cover + a soft drop-shadow so the card pops.
+- [x] **Calmer flow** — toned down the transit-line + chain (thinner/dimmer connectors, base node without the glow ring, smaller/desaturated K.Dot number) while keeping Kendrick the clear anchored base.
+
+> **⚠️ Year caveat (KTD3):** the year is the preview source's release date — it can reflect a reissue/compilation rather than the original collaboration (e.g. the "Topsy" comp). The authoritative original year is MusicBrainz's first-release-date, deferred (needs an ingest).

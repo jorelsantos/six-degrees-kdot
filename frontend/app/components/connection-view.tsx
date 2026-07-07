@@ -121,7 +121,7 @@ function ConnectionResult({
           <span className="font-bold text-content-primary">{start}</span>&rsquo;s{" "}
           <span className="font-bold text-brand">(k)dot score</span> is
         </p>
-        <p className="text-display font-black leading-none tracking-tight text-brand">
+        <p className="text-[2.5rem] font-black leading-none tracking-tight text-brand/90">
           {connection.degrees}
         </p>
       </div>
@@ -160,8 +160,8 @@ function ChainNode({ name, isBase }: { name: string; isBase: boolean }) {
     <div
       className={
         isBase
-          ? "rounded-pill bg-brand px-6 py-2.5 text-center text-body font-black text-black shadow-[0_0_0_3px_rgba(30,215,96,0.25)]"
-          : "rounded-pill border border-border-strong bg-surface-raised px-5 py-2 text-center text-bodySm font-bold text-content-primary"
+          ? "rounded-pill bg-brand/90 px-6 py-2.5 text-center text-body font-bold text-black"
+          : "rounded-pill border border-border-strong bg-surface-raised px-5 py-2 text-center text-bodySm font-medium text-content-primary"
       }
     >
       {name}
@@ -170,5 +170,5 @@ function ChainNode({ name, isBase }: { name: string; isBase: boolean }) {
 }
 
 function DownArrow() {
-  return <div aria-hidden="true" className="my-1 h-4 w-[3px] rounded bg-brand/50" />;
+  return <div aria-hidden="true" className="my-1 h-4 w-[2px] rounded bg-brand/30" />;
 }

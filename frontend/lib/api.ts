@@ -91,6 +91,10 @@ export interface EdgePreview {
   artwork_url: string | null;
   store_url: string | null;
   fallback_url: string | null; // Apple Music search when no preview exists
+  artists: string[]; // credited lineup (from the MusicBrainz edge)
+  album: string | null;
+  year: number | null;
+  dominant_color: string | null; // '#rrggbb' from the cover, for card theming
 }
 
 export async function fetchEdgePreview(a: string, b: string): Promise<EdgePreview> {

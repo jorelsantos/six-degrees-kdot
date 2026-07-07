@@ -26,24 +26,20 @@ export function PathHeadline({ path }: { path: ArtistRef[] }) {
                 // Connector flows INTO the next station (arrowhead points right,
                 // toward the base). Thicker/brighter on the final hop into Kendrick.
                 <span aria-hidden="true" className="flex shrink-0 items-center">
-                  <span className={`h-[3px] bg-brand ${isBase ? "w-6 sm:w-9" : "w-5 sm:w-8"}`} />
-                  <span
-                    className={`-ml-[2px] border-y-[5px] border-l-[7px] border-y-transparent border-l-brand ${
-                      isBase ? "border-y-[6px] border-l-[9px]" : ""
-                    }`}
-                  />
+                  <span className={`h-[2px] bg-brand/45 ${isBase ? "w-6 sm:w-9" : "w-5 sm:w-8"}`} />
+                  <span className="-ml-[2px] border-y-[4px] border-l-[6px] border-y-transparent border-l-brand/45" />
                 </span>
               )}
               <span
                 className={
                   isBase
-                    ? "flex items-center gap-2 whitespace-nowrap rounded-pill bg-brand px-4 py-2 text-body font-black text-black shadow-[0_0_0_3px_rgba(30,215,96,0.25)]"
-                    : "flex items-center gap-2 whitespace-nowrap rounded-pill border border-border-strong bg-surface-raised px-3 py-1.5 text-bodySm font-bold text-content-primary"
+                    ? "flex items-center gap-2 whitespace-nowrap rounded-pill bg-brand/90 px-4 py-1.5 text-bodySm font-bold text-black"
+                    : "flex items-center gap-2 whitespace-nowrap rounded-pill border border-border-strong bg-surface-raised px-3 py-1.5 text-bodySm font-medium text-content-primary"
                 }
               >
                 <span
                   aria-hidden="true"
-                  className={`shrink-0 rounded-full ${isBase ? "h-2.5 w-2.5 bg-black" : "h-2 w-2 bg-brand"}`}
+                  className={`shrink-0 rounded-full ${isBase ? "h-2 w-2 bg-black" : "h-1.5 w-1.5 bg-brand/70"}`}
                 />
                 {artist.name}
               </span>
