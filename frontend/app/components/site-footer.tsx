@@ -16,25 +16,16 @@ export function SiteFooter() {
         >
           MusicBrainz
         </a>{" "}
-        (CC0). Song previews and links via the{" "}
+        (CC0). Song previews via the official{" "}
         <a
-          href="https://www.apple.com/apple-music/"
+          href="https://developer.spotify.com/documentation/embeds"
           target="_blank"
           rel="noreferrer"
           className="text-brand hover:underline"
         >
-          Apple Music / iTunes
-        </a>{" "}
-        and{" "}
-        <a
-          href="https://www.deezer.com"
-          target="_blank"
-          rel="noreferrer"
-          className="text-brand hover:underline"
-        >
-          Deezer
-        </a>{" "}
-        APIs. Not affiliated with Apple, Deezer, or the artists.
+          Spotify embed player
+        </a>
+        . Not affiliated with Spotify or the artists.
       </p>
     </footer>
   );

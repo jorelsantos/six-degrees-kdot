@@ -11,7 +11,9 @@ depth: standard
 
 # feat: Preview-sourcing feasibility spike — is the offline pipeline worth building, or lazy-only?
 
-> **DECISION (2026-07-06): resolved to build the full source waterfall, lazy last.** After seeing the coverage (MB 4.6% / ISRC 28.6% / ~71% gap), the user chose to **stack all sources** — MB Spotify links → ISRC via Deezer/SoundCloud/Apple → ListenBrainz → Wikidata → lazy-resolve-on-Play as the last resort. That is neither pure Path A nor Path B; it's "use everything we can get cheaply, lazy only for what's left." The build plan is the (rewritten) `docs/plans/2026-07-06-005-feat-offline-preview-sourcing-pipeline-plan.md`. **This spike is now demoted from a go/no-go to an optional source-ordering/expectation measurement** (U1) that feeds plan 005's layer order — run it to know how much ListenBrainz actually contributes before a full ListenBrainz pass, but the build itself is decided.
+> **SPIKE RESULT — PATH B (2026-07-06, spike actually run).** The measurement ran on **67 real displayed songs** across 25 famous cross-genre targets (see Findings below). Offline sources fall far below the go/no-go floor — **ListenBrainz-metadata 14.9%**, MB URL links ~4.6% — while **Spotify's own search (the lazy path) resolves 77.6%** of the *same* songs (5×), with the ~22% misses concentrated in obscure/novelty/spurious edges. **Decision: ship lazy-resolve-on-Play + persist as the workhorse (Path B), with Deezer-by-ISRC as the non-Spotify fallback. Do NOT build plan 005's offline pipeline** — offline pre-baking isn't worth the 7-unit build. This **supersedes** the earlier "build the full stack" lean recorded below.
+>
+> **Prior lean (superseded):** an earlier session had resolved to build the full source waterfall (MB links → ISRC → ListenBrainz → Wikidata → lazy) in `docs/plans/2026-07-06-005-...-plan.md`. The spike's hard data (above) reverses that: the offline layers earn too little to justify the build.
 
 **Product Contract preservation:** No upstream brainstorm; scope confirmed live with the user (2026-07-06). Originally a **gating spike** for `docs/plans/2026-07-06-005-...-plan.md`; the gate resolved to "build the full stack" (see the DECISION note above). Anchored to `STRATEGY.md` (delight-over-completeness; the demo only needs previews for songs people actually view).
 
@@ -24,6 +26,24 @@ depth: standard
 Measured this session: offline Spotify-id coverage of our graph is **low** — MusicBrainz's own Spotify links cover only **4.6%** of our connecting recordings, and even counting ISRC the offline-resolvable ceiling is **~28.7%**, leaving a **~71% gap**. Quick probes of ListenBrainz's MBID→Spotify mapping were **inconclusive** (biased samples returned single digits). Wikidata's track-level Spotify coverage is thin.
 
 The strategic consequence: **no offline source cleanly solves the preview problem.** But it doesn't have to — the app only shows songs on *viewed* paths, so **lazy-resolve-on-Play + persist** (resolve a song's id the first time someone plays it, then cache it forever) is the real workhorse, and it's demo-safe (a few resolutions total, each once). This spike runs one proper, unbiased coverage measurement to decide between two paths, then commits to the simpler one that fits the real numbers.
+
+---
+
+## Findings & Decision (spike run 2026-07-06)
+
+**Method:** `scripts/preview_coverage_spike.py` resolved 25 famous cross-genre search targets (rap/pop/R&B/rock/older acts), ran the real shortest-path finder to Kendrick, and collected the **deduped songs the UI actually displays** (≤3 per edge) → **67 unique displayed songs**. Each was measured for Spotify-id resolvability per source. This avoids the raw-degree-hub sampling trap (Various Artists / Hatsune Miku).
+
+| Source | Resolvable (of 67 displayed songs) | Notes |
+|---|---|---|
+| **Spotify search** (the lazy path) | **52 = 77.6%** | Spotify's own fuzzy search + accept-logic; misses mostly obscure/novelty/spurious edges |
+| **ListenBrainz** (`spotify-id-from-metadata`, artist+title) | **10 = 14.9%** | best offline source; strict artist-primary match hurts on "feat." credits |
+| **MusicBrainz** URL links | ~4.6% | session dump scan (needs recording MBIDs to measure per-song) |
+
+**Decision (KTD2, 60/40 rule): PATH B — lazy-resolve-on-Play + persist.** The best offline source (14.9%) is far below the 40% floor, while the lazy path (77.6%) resolves ~5× as many displayed songs and is exactly the mechanism plan 004 already proved (`spotify_enrich`). Offline pre-baking (plan 005's 7 units) is **not worth the build**. Ship the trimmed lazy path (U3) + Deezer-by-ISRC as the non-Spotify fallback for the ~22% Spotify-search misses (many of which are spurious edges anyway).
+
+**Implication for plan 005:** superseded down to its lazy tail (U8) + graceful multi-source rendering (U5). The offline extraction/ingest/backfill units (U1–U4, U6) are dropped as not cost-justified. Plan 005 is marked `superseded` accordingly.
+
+**SHIPPED (2026-07-06):** U3 (the trimmed lazy path) is built and verified. `POST /api/resolve-preview` runs one Spotify search on first Play, persists the id (or `"none"` sentinel), and caches it; the frontend resolves lazily on Play and degrades to "Preview unavailable" on a miss. In-process token cache + `.env` auto-load added. 104 tests green; live-verified a hit (Baby Keem × Kendrick "Family Ties" → embed mounts), the degrade path, persistence (no re-search), and Streamlit still boots. Pre-public guardrails deferred (see `frontend/DESIGN-NOTES.md`).
 
 ---
 

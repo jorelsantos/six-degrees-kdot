@@ -30,6 +30,11 @@ CROSS_TIER_OVERRIDE_FACTOR = 50
 # superstar whose popularity is still the schema default 0.
 ENRICHED_COVERAGE_THRESHOLD = 0.9
 
+# Sentinel stored in songs.spotify_track_id when the enrichment pass searched
+# for a song but found no acceptable match. Distinct from NULL ("not yet
+# checked") so the pass is resumable and re-runs make zero Spotify calls (R2).
+NO_TRACK_SENTINEL = "none"
+
 # Characters deleted outright by fold_name (intra-word marks: "B.I.G." -> "big",
 # "Lil’ Flip" -> "lil flip"). Everything else non-alphanumeric becomes a space
 # ("JAY‐Z" -> "jay z", "Tyler, The Creator" -> "tyler the creator").
@@ -178,6 +183,16 @@ class CollaborationDatabase:
             song_cols = {row[1] for row in cursor.fetchall()}
             if "collaborators" not in song_cols:
                 cursor.execute("ALTER TABLE songs ADD COLUMN collaborators TEXT DEFAULT '[]'")
+
+            # Migration guard: `spotify_track_id` is resolved once by the
+            # build-time enrichment pass (src/spotify_enrich.py) and read at
+            # render time to embed Spotify's player — runtime never calls
+            # Spotify's API (plan 2026-07-06-004, R2/KTD2). NULL = "not yet
+            # checked"; a real track id or the literal "none" sentinel = "checked"
+            # (the sentinel is what makes the pass resumable — same idiom as
+            # `pop_enriched` distinguishing checked from the ambiguous default).
+            if "spotify_track_id" not in song_cols:
+                cursor.execute("ALTER TABLE songs ADD COLUMN spotify_track_id TEXT")
 
             # Artist aliases (alternate names -> canonical artist node). One row
             # per (artist, alias); lets a search for "Kanye West" resolve to the
@@ -711,6 +726,67 @@ class CollaborationDatabase:
                 UPDATE artists SET popularity = ?, pop_enriched = 1 WHERE id = ?
             """, [(int(v), aid) for aid, v in rows])
 
+    def get_songs_without_track_id(self, min_degree: int = 0,
+                                   limit: Optional[int] = None) -> List[Dict]:
+        """
+        Return songs whose Spotify track id hasn't been resolved yet
+        (spotify_track_id IS NULL), so a run resumes where it left off. Each row
+        is {'id', 'song_name', 'collaborators'} — the collaborators list feeds
+        both the search term and the accept-logic.
+
+        `min_degree` bounds runtime to songs on an edge touching a prominent
+        artist (max endpoint degree >= N), leaving the long tail for a later full
+        pass — the same knob as the popularity pass. `limit` caps the batch (used
+        to measure a first pass, per Q1).
+        """
+        sql = """
+            SELECT s.id, s.song_name, s.collaborators
+            FROM songs s
+            JOIN collaborations c ON s.collaboration_id = c.id
+            JOIN artists a1 ON a1.id = c.artist1_id
+            JOIN artists a2 ON a2.id = c.artist2_id
+            WHERE s.spotify_track_id IS NULL
+              AND MAX(a1.degree, a2.degree) >= ?
+        """
+        params: List = [min_degree]
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            out = []
+            for row in cursor.fetchall():
+                try:
+                    collabs = json.loads(row["collaborators"]) if row["collaborators"] else []
+                except (ValueError, TypeError):
+                    collabs = []
+                out.append({
+                    "id": row["id"],
+                    "song_name": row["song_name"],
+                    "collaborators": collabs,
+                })
+            return out
+
+    def set_spotify_track_id(self, song_id: int, track_id: str) -> None:
+        """Persist a resolved Spotify track id (or the NO_TRACK_SENTINEL) for a
+        song row. Idempotent; marks the row as checked so re-runs skip it."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE songs SET spotify_track_id = ? WHERE id = ?",
+                (track_id, song_id))
+
+    def set_spotify_track_id_bulk(self, rows: List[Tuple[int, str]]) -> None:
+        """Bulk variant of set_spotify_track_id: rows of (song_id, track_id)."""
+        if not rows:
+            return
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany(
+                "UPDATE songs SET spotify_track_id = ? WHERE id = ?",
+                [(track_id, song_id) for song_id, track_id in rows])
+
     def artist_exists(self, artist_id: str) -> bool:
         """Check if artist is in database."""
         with self._get_connection() as conn:
@@ -795,10 +871,16 @@ class CollaborationDatabase:
     def get_collaboration_song_details(self, artist1_id: str, artist2_id: str) -> List[Dict]:
         """
         Like get_collaboration_songs, but each song also carries the full list
-        of artists credited on that recording (for showing the lineup).
+        of artists credited on that recording (for showing the lineup) plus the
+        build-time-resolved `spotify_track_id` (the embed player's input). The
+        id is the real track id, or None for songs that are unresolved (NULL) or
+        resolved-to-no-match (the "none" sentinel) — both degrade to no player.
 
         Returns:
-            List of {'name': str, 'collaborators': List[str]}
+            List of {'id': int, 'name': str, 'collaborators': List[str],
+                     'spotify_track_id': Optional[str]}
+            The `id` is the song row id — the frontend hands it to the lazy
+            resolve endpoint so a resolved-on-Play id persists to the right row.
         """
         if artist1_id > artist2_id:
             artist1_id, artist2_id = artist2_id, artist1_id
@@ -806,7 +888,7 @@ class CollaborationDatabase:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT s.song_name, s.collaborators
+                SELECT s.id, s.song_name, s.collaborators, s.spotify_track_id
                 FROM songs s
                 JOIN collaborations c ON s.collaboration_id = c.id
                 WHERE c.artist1_id = ? AND c.artist2_id = ?
@@ -818,8 +900,45 @@ class CollaborationDatabase:
                     collabs = json.loads(row['collaborators']) if row['collaborators'] else []
                 except (ValueError, TypeError):
                     collabs = []
-                details.append({'name': row['song_name'], 'collaborators': collabs})
+                track_id = row['spotify_track_id']
+                # Normalize the sentinel/unchecked states to None so callers only
+                # ever see a real, embeddable id or nothing.
+                if track_id == NO_TRACK_SENTINEL:
+                    track_id = None
+                details.append({
+                    'id': row['id'],
+                    'name': row['song_name'],
+                    'collaborators': collabs,
+                    'spotify_track_id': track_id,
+                })
             return details
+
+    def get_song(self, song_id: int) -> Optional[Dict]:
+        """
+        Fetch one song row by id for the lazy resolve endpoint: its title, the
+        credited lineup (for the search query + accept-logic), and the current
+        spotify_track_id (raw — may be a real id, the "none" sentinel, or NULL).
+        Returns None if the id is unknown.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, song_name, collaborators, spotify_track_id
+                FROM songs WHERE id = ?
+            """, (song_id,))
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            try:
+                collabs = json.loads(row['collaborators']) if row['collaborators'] else []
+            except (ValueError, TypeError):
+                collabs = []
+            return {
+                'id': row['id'],
+                'name': row['song_name'],
+                'collaborators': collabs,
+                'spotify_track_id': row['spotify_track_id'],
+            }
 
     def get_stats(self) -> Dict:
         """Get database statistics."""

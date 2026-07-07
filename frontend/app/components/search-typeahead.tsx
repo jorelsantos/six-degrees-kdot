@@ -97,8 +97,23 @@ export function SearchTypeahead() {
   const showEmpty = showDropdown && searched && !pending && candidates.length === 0;
 
   return (
-    <div className="relative w-full">
+    <div className="relative mx-auto w-full max-w-md">
       <div className="relative">
+        {/* Leading search icon (U5 — compact, icon-led). */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-content-tertiary"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8" />
+            <path
+              d="m20 20-3.5-3.5"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+          </svg>
+        </span>
         <input
           type="text"
           role="combobox"
@@ -108,14 +123,14 @@ export function SearchTypeahead() {
           aria-activedescendant={active >= 0 ? `sugg-${active}` : undefined}
           autoFocus
           value={query}
-          placeholder="Search an artist — e.g. Drake, SZA, Sinatra…"
+          placeholder="Search an artist — e.g. Drake, SZA…"
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
           onFocus={() => candidates.length > 0 && setOpen(true)}
-          className="w-full rounded-pill border border-border-subtle bg-surface-raised px-6 py-4 text-base text-content-primary placeholder:text-content-tertiary focus:border-brand focus:outline-none"
+          className="w-full rounded-pill border border-border-subtle bg-surface-raised py-3 pl-11 pr-10 text-bodySm text-content-primary placeholder:text-content-tertiary focus:border-brand focus:outline-none"
         />
         {pending && (
-          <span className="absolute right-6 top-1/2 -translate-y-1/2 text-caption text-content-tertiary">
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-caption text-content-tertiary">
             …
           </span>
         )}

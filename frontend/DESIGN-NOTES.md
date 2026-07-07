@@ -25,7 +25,9 @@ original implementation of an observed style, not a copy of protected files.
 - [x] **No Spotify assets, images, or code** from their bundle.
 - [x] **Non-affiliation disclaimer** rendered in the app footer: "An unofficial concept — not affiliated with Spotify."
 - [x] **"Concept" framing** in the app and README (nominative use: we may name Spotify to describe what the concept is *for*).
-- [x] **Data attribution preserved** — MusicBrainz (CC0), Apple Music/iTunes, Deezer, per the Streamlit footer.
+- [x] **Data attribution preserved** — MusicBrainz (CC0) + the official Spotify embed player (see below). iTunes/Deezer attribution retired with the previews (plan 004, R3).
+- [x] **Spotify embed = sanctioned use (plan 004, R7)** — the previews render via Spotify's own `open.spotify.com/embed/track/{id}` iframe, Spotify's official, publicly-documented sharing mechanism (it serves its own player, controls, and branding inside the frame). We embed by track id only; we do not proxy, download, or re-host any audio, and we make **zero** Spotify API calls at runtime — track ids are resolved once at build time (`src/spotify_enrich.py`) and persisted. `allow="encrypted-media"` is a required, tested attribute (omitting it silently disables playback).
+- [x] **Spotify-app chrome is clean-room + inert (plan 004, R4/KTD3)** — `app-chrome.tsx` recreates the *shape* of a music-app shell (sidebar, top bar, avatar) from observation using our own tokens. Look-and-feel (layout, dark surfaces, nav shape) is not protected; the from-scratch lookalike is the established concept-portfolio path and is **less** fraught than pasting Spotify's actual screenshot as a backdrop (explicitly rejected). Hard lines held: **no Spotify logo/wordmark**, no lifted icons (all nav icons are original inline SVGs), no lifted assets/code. The chrome is non-interactive (nav is `aria-hidden`, `cursor-default`, routes nowhere); Rabbit Hole is the single live surface. **This checklist is the guard against a future contributor adding the real logo "for realism."**
 
 ## Token summary
 
@@ -45,14 +47,30 @@ Enumerated from `app.py` and verified in the live preview (desktop + 375px mobil
 - [x] **Artist cards** with green accent underline for every hop.
 - [x] **"Collaborated On" pair label** — "Frank Sinatra × Count Basie" per edge; 3-degree chain verified.
 - [x] **Per-song "with X, Y"** collaborator line (endpoints excluded).
-- [x] **30s audio preview** — iTunes→Deezer, fetched on first play (not on mount).
-- [x] **Store link-out** — "Listen on / Search on Apple Music".
+- [x] **30s preview via the Spotify embed player (plan 004)** — mounted lazily on "Play preview" click (not on mount), from the build-time-resolved track id; verified "Slow Down" (`4LycrPCWsqESQ08I3ghkrT`) plays. Replaces the iTunes→Deezer player + the "Search on Apple Music" link-out (both retired, R3).
+- [x] **Graceful degrade** — a song with no resolved id shows no player and no broken link (verified "Still Cookin").
 - [x] **"+N more collaborations"** affordance when an edge has >3 songs.
 - [x] **0-degree Kendrick** easter-egg state.
 - [x] **Known-artist-no-path** state (200/null) — distinct from…
 - [x] **Unknown-artist not-found** state (404).
 - [x] **Gibberish → honest empty** message + disabled Find button.
-- [x] **Data attribution + non-affiliation disclaimer** footer.
+- [x] **Data attribution + non-affiliation disclaimer** footer (updated: MusicBrainz + Spotify embed; Apple/Deezer retired).
 - [x] **Responsive** at 375px and desktop.
 
-**Verification contract met:** Python suite 89 green (incl. `tests/test_api.py`), six headline UI flows screenshotted at both widths, Streamlit app still boots on demand (untouched). Broad-query latency handled via the API layer (longer debounce on short/typo queries).
+### Added in plan 004 (Spotify embeds + chrome + results treatment)
+
+- [x] **Inert Spotify-app chrome** — sidebar + top bar + profile avatar top-right wrap the feature; nav routes nowhere; verified usable inside the shell at desktop and 375px (sidebar hidden on mobile, feature never squeezed).
+- [x] **Path headline / transit-line** — the chain leads the connection page ("Larry June → Dom Kennedy → Kendrick Lamar"); 1-degree and 2-degree chains verified; scrolls horizontally at 375px.
+- [x] **Compact, icon-led search bar** — narrower `max-w-md`, leading search icon; typeahead / keyboard nav / auto-run / notice behavior unchanged (dumb-renders API order).
+
+**Verification contract met (plan 004):** Python + API suite 98 green (incl. `tests/test_spotify_enrich.py`, `tests/test_api.py`); the live preview confirms the chrome, the compact search + typeahead, the path headline, the working Spotify embed ("Slow Down" plays), and graceful no-id degrade — at desktop + 375px, no console errors; **zero runtime Spotify API calls** (only the sanctioned embed iframe URL + our own `/api/*`); Streamlit app still boots on demand (untouched).
+
+### Added in plan 007 (Path B — lazy resolve-on-Play previews)
+
+Plan 007's feasibility spike (`scripts/preview_coverage_spike.py`) measured Spotify-id resolvability on real *displayed* songs: **best offline source ~15% (ListenBrainz) / ~4.6% (MusicBrainz links)** vs **~78% for Spotify's own search** — so the offline pre-bake pipeline (plan 005) was **not** built; the lazy path is the workhorse.
+
+- [x] **Lazy resolve-on-Play** — a song with no resolved id shows a "Play preview" button; on click, `POST /api/resolve-preview?song_id=` runs one Spotify search, persists the id, and mounts the embed. Nothing fires on search/page-load — only on Play, once per song, cached forever after.
+- [x] **Graceful degrade** — no acceptable match → "Preview unavailable" (a `"none"` sentinel is persisted so it never re-searches); no creds / network error → same, leaving the row NULL for a later retry. No broken links.
+- [x] **Token cached in-process** (`_spotify_token`, ~50 min) — the client-credentials token is fetched once, not per request; `.env` is auto-loaded so `uvicorn` has creds.
+
+> **⚠️ Pre-public guardrail (DEFERRED to the deployment plan):** `/api/resolve-preview` makes a live Spotify call and must NOT be exposed to public traffic without a global rate limit, per-IP limit, and daily budget. It is demo-safe (each song resolves at most once, then cached), but a viral spike of first-plays could approach Spotify's rolling rate window. Do not deploy publicly until those guardrails land.

@@ -1,8 +1,9 @@
 ---
 artifact_contract: ce-unified-plan/v1
-artifact_readiness: implementation-ready
+artifact_readiness: superseded
 execution: code
 product_contract_source: ce-plan-bootstrap
+superseded_by: docs/plans/2026-07-06-007-feat-preview-coverage-feasibility-plan.md
 title: "feat: Layered preview sourcing — MB links → ListenBrainz → Wikidata → ISRC/multi-service → lazy tail"
 date: 2026-07-06
 type: feat
@@ -11,7 +12,9 @@ depth: deep
 
 # feat: Layered preview sourcing — MB links → ListenBrainz → Wikidata → ISRC/multi-service → lazy tail
 
-**Product Contract preservation:** No upstream brainstorm; the source **waterfall** was decided live with the user (2026-07-06): use MB Spotify URLs, then ISRC via Deezer/SoundCloud/Apple, then try ListenBrainz and Wikidata, and finally lazy-resolve-on-Play as the last resort "if what we have doesn't work." This plan encodes that order. The go/no-go question is resolved (build the stack) — see `docs/plans/2026-07-06-007-feat-preview-coverage-feasibility-plan.md`, whose spike now feeds source **ordering/expectations**, not a build decision. Creative expansions live in `docs/plans/2026-07-06-006-feat-rabbit-hole-enrichment-roadmap-plan.md`.
+> **⛔ SUPERSEDED (2026-07-06) — do NOT build the offline units.** Plan 007's feasibility spike (`scripts/preview_coverage_spike.py`) measured Spotify-id resolvability on real *displayed* songs and found the offline sources far too thin to justify this pipeline: **ListenBrainz-metadata 14.9%, MusicBrainz URL links ~4.6%**, versus **~78% for Spotify's own search (the lazy path)**. The offline extraction/ingest/backfill/ISRC units (U1–U6) were therefore **not built**. What shipped instead is the **lazy resolve-on-Play + persist** path (this plan's U8, promoted to the primary), delivered via plan 007's U3 — see `docs/plans/2026-07-06-007-feat-preview-coverage-feasibility-plan.md` (Findings & Decision) and `frontend/DESIGN-NOTES.md`. This document is kept for the record; its layered offline design is the road not taken.
+
+**Product Contract preservation:** No upstream brainstorm; the source **waterfall** was decided live with the user (2026-07-06): use MB Spotify URLs, then ISRC via Deezer/SoundCloud/Apple, then try ListenBrainz and Wikidata, and finally lazy-resolve-on-Play as the last resort "if what we have doesn't work." **That build decision was reversed by plan 007's spike (see the SUPERSEDED banner above) — only the lazy tail shipped.** Creative expansions live in `docs/plans/2026-07-06-006-feat-rabbit-hole-enrichment-roadmap-plan.md`.
 
 > **Context for a new session:** Rabbit Hole ("six degrees of Kendrick Lamar"): engine in `src/` (Python), FastAPI in `api/main.py`, Next.js in `frontend/`. Plan 004 (shipped) added the **Spotify embed player** — the connection page plays a 30s preview from a `songs.spotify_track_id` alone, **no runtime Spotify API call**. Plan 004 resolved ids via a Spotify **search** crawl, impractical at ~563k songs. This plan sources ids/previews from data we largely already own, stacking sources cheapest-first, with lazy Spotify search only as the final fallback. Graph built by `src/musicbrainz_ingest.py`; DB is `data/collaboration_network_mb.db`; dump tables staged in `data/mb_raw/mbdump/`.
 

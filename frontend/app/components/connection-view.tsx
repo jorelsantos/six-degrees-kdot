@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchConnection, type Connection, type ConnectionResult } from "@/lib/api";
-import { AudioPreview } from "./audio-preview";
+import { SpotifyEmbed } from "./spotify-embed";
+import { PathHeadline } from "./path-headline";
 
 export function ConnectionView({
   artistId,
@@ -116,6 +117,9 @@ function ConnectionResult({
         </p>
       )}
 
+      {/* Path headline / transit-line — leads the page with the full chain. */}
+      <PathHeadline path={connection.path} />
+
       {/* Degree header — compact, no emoji (carries today's decisions). */}
       <div className="rounded-lg border border-brand bg-gradient-to-br from-brand/15 to-transparent px-6 py-5 text-center">
         <span className="text-display font-black tracking-tight">{connection.degrees}</span>
@@ -157,7 +161,12 @@ function CollabSection({
   const to = edge.to.name;
   const details = edge.song_details.length
     ? edge.song_details
-    : edge.songs.map((s) => ({ name: s, collaborators: [] as string[] }));
+    : edge.songs.map((s) => ({
+        id: -1, // legacy fallback (no song_details) — not lazily resolvable
+        name: s,
+        collaborators: [] as string[],
+        spotify_track_id: null as string | null,
+      }));
   const shown = details.slice(0, 3);
   const more = details.length - shown.length;
 
@@ -191,7 +200,16 @@ function CollabSection({
                   {others.length > 6 ? "…" : ""}
                 </p>
               )}
-              <AudioPreview song={song.name} artists={[from, to]} />
+              {/* Render for every real song: a resolved id plays immediately;
+                  an unresolved one (id >= 0) resolves lazily on Play (plan 007).
+                  Legacy fallback rows (id < 0) can't resolve, so skip them. */}
+              {(song.spotify_track_id || song.id >= 0) && (
+                <SpotifyEmbed
+                  trackId={song.spotify_track_id}
+                  songId={song.id}
+                  song={song.name}
+                />
+              )}
             </div>
           );
         })}

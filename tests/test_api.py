@@ -33,9 +33,17 @@ def client(tmp_path, monkeypatch):
     db.set_popularity("rihanna", 5_000_000)
     db.set_popularity("g1", 500_000)
     db.set_popularity("g2", 30)
-    db.add_collaboration("rihanna", "kendrick", "LOYALTY.")
-    db.add_collaboration("g1", "kendrick", "Some Song")
+    db.add_collaboration("rihanna", "kendrick", "LOYALTY.",
+                         collaborators=["Rihanna", "Kendrick Lamar"])
+    db.add_collaboration("g1", "kendrick", "Some Song",
+                         collaborators=["The Game", "Kendrick Lamar"])
     db.refresh_degrees()
+
+    # Resolve a Spotify track id on one connecting song (build-time enrichment,
+    # U1) so /api/connection can carry it; the other stays NULL (degrades).
+    for s in db.get_songs_without_track_id():
+        if s["song_name"] == "LOYALTY.":
+            db.set_spotify_track_id(s["id"], "loyaltyTrackId")
 
     monkeypatch.setenv("RABBITHOLE_DB", str(db_path))
     monkeypatch.setenv("RABBITHOLE_KENDRICK_ID", "kendrick")
@@ -96,6 +104,21 @@ def test_connection_one_degree(client):
     assert conn["path"][-1]["name"] == "Kendrick Lamar"
 
 
+def test_connection_song_details_carry_spotify_track_id(client):
+    rid = client.get("/api/search", params={"q": "Rihanna"}).json()["candidates"][0]["id"]
+    conn = client.get("/api/connection", params={"artist_id": rid}).json()["connection"]
+    details = conn["connections"][0]["song_details"]
+    loyalty = next(d for d in details if d["name"] == "LOYALTY.")
+    assert loyalty["spotify_track_id"] == "loyaltyTrackId"
+
+
+def test_connection_song_details_null_track_id_when_unresolved(client):
+    gid = client.get("/api/search", params={"q": "The Game"}).json()["candidates"][0]["id"]
+    conn = client.get("/api/connection", params={"artist_id": gid}).json()["connection"]
+    details = conn["connections"][0]["song_details"]
+    assert all(d["spotify_track_id"] is None for d in details)
+
+
 def test_connection_unknown_artist_404(client):
     assert client.get("/api/connection", params={"artist_id": "nope"}).status_code == 404
 
@@ -118,3 +141,88 @@ def test_preview_miss_is_null_200(client, monkeypatch):
     r = client.get("/api/preview", params={"song": "zzz", "artists": "nobody"})
     assert r.status_code == 200
     assert r.json()["preview_url"] is None
+
+
+# --- Lazy resolve-on-Play (plan 007, Path B) ---------------------------------
+
+def test_connection_song_details_carry_song_id(client):
+    rid = client.get("/api/search", params={"q": "Rihanna"}).json()["candidates"][0]["id"]
+    conn = client.get("/api/connection", params={"artist_id": rid}).json()["connection"]
+    sd = conn["connections"][0]["song_details"][0]
+    assert isinstance(sd["id"], int) and sd["id"] >= 0  # frontend keys resolve on this
+
+
+def _unresolved_song_id(client):
+    """The 'Some Song' (The Game -> Kendrick) row, which stays NULL in the fixture."""
+    gid = client.get("/api/search", params={"q": "The Game"}).json()["candidates"][0]["id"]
+    conn = client.get("/api/connection", params={"artist_id": gid}).json()["connection"]
+    return conn["connections"][0]["song_details"][0]["id"]
+
+
+def test_resolve_preview_resolves_and_persists(client, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "_spotify_token", lambda: "tok")
+    calls = {"n": 0}
+
+    def fake_search(query, token, timeout=6.0):
+        calls["n"] += 1
+        return [{"id": "TRACKXYZ", "name": "Some Song", "artists": [{"name": "The Game"}]}]
+
+    monkeypatch.setattr(main, "search_track", fake_search)
+    sid = _unresolved_song_id(client)
+    r = client.post("/api/resolve-preview", params={"song_id": sid})
+    assert r.status_code == 200
+    assert r.json()["spotify_track_id"] == "TRACKXYZ"
+    assert calls["n"] == 1
+    # Second call reads the persisted id — no new search (R5: resolve once, ever).
+    r2 = client.post("/api/resolve-preview", params={"song_id": sid})
+    assert r2.json()["spotify_track_id"] == "TRACKXYZ"
+    assert calls["n"] == 1
+
+
+def test_resolve_preview_miss_persists_sentinel(client, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "_spotify_token", lambda: "tok")
+    calls = {"n": 0}
+
+    def fake_search(query, token, timeout=6.0):
+        calls["n"] += 1
+        return [{"id": "WRONG", "name": "unrelated track", "artists": [{"name": "Nobody"}]}]
+
+    monkeypatch.setattr(main, "search_track", fake_search)
+    sid = _unresolved_song_id(client)
+    r = client.post("/api/resolve-preview", params={"song_id": sid})
+    assert r.json()["spotify_track_id"] is None  # no acceptable match -> sentinel
+    # Sentinel persisted -> second call degrades without a new search.
+    r2 = client.post("/api/resolve-preview", params={"song_id": sid})
+    assert r2.json()["spotify_track_id"] is None
+    assert calls["n"] == 1
+
+
+def test_resolve_preview_no_creds_degrades(client, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "_spotify_token", lambda: None)  # creds absent
+    sid = _unresolved_song_id(client)
+    r = client.post("/api/resolve-preview", params={"song_id": sid})
+    assert r.status_code == 200
+    assert r.json()["spotify_track_id"] is None
+
+
+def test_resolve_preview_already_resolved_makes_no_call(client, monkeypatch):
+    import main
+
+    def boom(*a, **k):
+        raise AssertionError("search must not run for an already-resolved song")
+
+    monkeypatch.setattr(main, "_spotify_token", lambda: "tok")
+    monkeypatch.setattr(main, "search_track", boom)
+    # LOYALTY. is pre-resolved to "loyaltyTrackId" in the fixture.
+    rid = client.get("/api/search", params={"q": "Rihanna"}).json()["candidates"][0]["id"]
+    conn = client.get("/api/connection", params={"artist_id": rid}).json()["connection"]
+    sid = next(d for d in conn["connections"][0]["song_details"] if d["name"] == "LOYALTY.")["id"]
+    r = client.post("/api/resolve-preview", params={"song_id": sid})
+    assert r.json()["spotify_track_id"] == "loyaltyTrackId"
+
+
+def test_resolve_preview_unknown_song_404(client):
+    assert client.post("/api/resolve-preview", params={"song_id": 999999}).status_code == 404

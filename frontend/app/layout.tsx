@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { figtree } from "./fonts";
-import { SiteFooter } from "./components/site-footer";
+import { AppChrome } from "./components/app-chrome";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,9 +14,8 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${figtree.variable} h-full`}>
-      <body className="min-h-full flex flex-col bg-surface-base text-content-primary">
-        <main className="flex-1 w-full">{children}</main>
-        <SiteFooter />
+      <body className="min-h-full bg-black text-content-primary">
+        <AppChrome>{children}</AppChrome>
       </body>
     </html>
   );
