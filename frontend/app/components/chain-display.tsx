@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 /**
@@ -16,16 +17,47 @@ export function ChainNode({
   name,
   photoUrl,
   isBase,
+  href = null,
 }: {
   id: string;
   name: string;
   photoUrl: string | null;
   isBase: boolean;
+  // When set, the node is a link to that artist's own six-degrees view
+  // (plan 002, U6 — "rabbit hole" traversal). Endpoints pass null: Kendrick
+  // (the base) and the searched artist (path[0], whose page you're already on).
+  href?: string | null;
 }) {
   const pill =
     isBase
       ? "relative flex items-center gap-3.5 rounded-pill bg-brand/90 py-2 pl-2 pr-7 text-headingSm font-bold text-black"
       : "relative flex items-center gap-3 rounded-pill border border-border-strong bg-surface-raised py-2 pl-2 pr-6 text-body font-semibold text-content-primary";
+
+  const inner = (
+    <>
+      <ArtistAvatar id={id} name={name} photoUrl={photoUrl} isBase={isBase} />
+      <span>{name}</span>
+      {href && (
+        // Persistent (not hover-only) affordance so the node reads as tappable
+        // without a cursor — matters on touch and in a screen-recorded demo.
+        <span aria-hidden="true" className="ml-1 text-content-tertiary transition group-hover:translate-x-0.5 group-hover:text-brand">
+          ›
+        </span>
+      )}
+    </>
+  );
+
+  const node = href ? (
+    <Link
+      href={href}
+      aria-label={`See ${name}'s path to Kendrick Lamar`}
+      className={`group cursor-pointer transition hover:border-brand/70 hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${pill}`}
+    >
+      {inner}
+    </Link>
+  ) : (
+    <div className={pill}>{inner}</div>
+  );
 
   return (
     <div className="relative flex items-center justify-center">
@@ -40,10 +72,7 @@ export function ChainNode({
           <img src={photoUrl} alt="" className="h-36 w-80 rounded-full object-cover opacity-[0.35] blur-2xl saturate-150" />
         </div>
       )}
-      <div className={pill}>
-        <ArtistAvatar id={id} name={name} photoUrl={photoUrl} isBase={isBase} />
-        <span>{name}</span>
-      </div>
+      {node}
     </div>
   );
 }

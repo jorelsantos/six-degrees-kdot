@@ -158,6 +158,9 @@ function ConnectionResult({
               name={artist.name}
               photoUrl={artist.photo_url}
               isBase={i === lastIndex}
+              // Intermediate nodes are traversable; endpoints are not — i===0 is
+              // the searched artist (current page), i===lastIndex is Kendrick.
+              href={i > 0 && i < lastIndex ? `/connection/${artist.id}` : null}
             />
             {i < connection.hops.length && (
               <>
