@@ -222,7 +222,9 @@ Request flow after launch: connection view = one Worker call walking ≤7 D1 row
 
 ## Definition of Done
 
-All nine units landed; both public URLs live; pre-bakes at ≥ the U3/U4 coverage bars; runbook written; production stack makes zero non-official upstream calls; total monthly cost $0.
+> **Superseded (2026-07-09) by plan `2026-07-09-002` (local-demo pivot):** the "both public URLs live" gate below is **deferred** — the user chose to ship a polished *local* demo first (screenshots + video for a portfolio) and defer public deployment until later. The local groundwork (path tree, pre-bakes, serving-DB export, Worker + D1, frontend cutover) landed and is committed; deployment to Cloudflare/Vercel is the remaining, deferred step. Do not treat "public URLs live" as a required completion gate for the current effort.
+
+All nine units landed; ~~both public URLs live~~ (deferred, see note above); pre-bakes at ≥ the U3/U4 coverage bars; runbook written; production stack makes zero non-official upstream calls; total monthly cost $0.
 
 ---
 

@@ -26,12 +26,18 @@ pip install -r requirements.txt          # Python engine + build-pipeline deps
 (cd frontend && npm install)             # Next.js frontend deps
 (cd worker && npm install)               # Cloudflare Worker deps
 
-# 2. Run the Worker + frontend (mirrors production; no Cloudflare account needed locally)
+# 2. Build the serving DB seed once (reads the master graph DB)
+python3 scripts/export_serving_db.py --db data/collaboration_network_mb.db
+
+# 3. One command: reset + seed local D1, then start the Worker + frontend together
+./scripts/run_local_demo.sh              # Worker :8787 + UI http://localhost:3000, Ctrl-C stops both
+
+# ...or run the two servers manually (assumes local D1 is already seeded):
 (cd worker && npx wrangler dev)          # Worker on :8787, local D1 (terminal 1)
 (cd frontend && npm run dev)             # UI at http://localhost:3000 (terminal 2)
 ```
 
-Open http://localhost:3000 — the frontend proxies `/api/*` to the Worker on `:8787` by default. Seeding local D1 with real data requires running the export pipeline first — see [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+Open http://localhost:3000 (or http://127.0.0.1:3000 — both are allowed dev origins) — the frontend proxies `/api/*` to the Worker on `:8787`. `run_local_demo.sh` resets local D1 before seeding, so re-running it always reflects the latest photo/track-ID pre-bake. For the full build/refresh pipeline see [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
 **Alternative: FastAPI local dev.** `api/main.py` still works against the live MusicBrainz graph directly (`uvicorn api.main:app --port 8000`, then set `API_ORIGIN=http://127.0.0.1:8000`) — useful for exploring the graph or debugging the engine, but its response shape isn't kept in sync with the Worker's, so the current frontend won't render correctly against it out of the box.
 
@@ -109,6 +115,9 @@ Edges come only from shared-recording co-credits on **Official** releases (bootl
 ### Module not found / import errors
 - Make sure you're running Python commands from the repo root (`src/` is added to the path relative to it)
 - Reinstall dependencies: `pip install -r requirements.txt`, `npm install` in `frontend/`, and `npm install` in `worker/`
+
+### Known dev-only issues
+- `npm run lint` reports a pre-existing `react-hooks/set-state-in-effect` error in `frontend/app/components/search-typeahead.tsx` (a `setState` in an effect body). It's unrelated to current work and does not affect `npm run build`; deferred. (`preview-player.tsx` carried the same pattern but was removed in the Spotify-embed cutover.)
 
 ## Project Structure
 
