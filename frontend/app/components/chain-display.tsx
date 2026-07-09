@@ -22,16 +22,28 @@ export function ChainNode({
   photoUrl: string | null;
   isBase: boolean;
 }) {
+  const pill =
+    isBase
+      ? "relative flex items-center gap-3.5 rounded-pill bg-brand/90 py-2 pl-2 pr-7 text-headingSm font-bold text-black"
+      : "relative flex items-center gap-3 rounded-pill border border-border-strong bg-surface-raised py-2 pl-2 pr-6 text-body font-semibold text-content-primary";
+
   return (
-    <div
-      className={
-        isBase
-          ? "flex items-center gap-3.5 rounded-pill bg-brand/90 py-2 pl-2 pr-7 text-headingSm font-bold text-black"
-          : "flex items-center gap-3 rounded-pill border border-border-strong bg-surface-raised py-2 pl-2 pr-6 text-body font-semibold text-content-primary"
-      }
-    >
-      <ArtistAvatar id={id} name={name} photoUrl={photoUrl} isBase={isBase} />
-      <span>{name}</span>
+    <div className="relative flex items-center justify-center">
+      {/* Dim artist-photo backdrop (plan 002, U4): a soft, blurred, low-opacity
+          wash of the artist's own photo behind the pill, so each node feels lit
+          by the artist without competing with the opaque Spotify embed below it
+          (the backdrop is scoped to the node region, not the whole hop block).
+          Only when a photo exists — photoless nodes stay clean (OQ2 default). */}
+      {photoUrl && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-visible">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={photoUrl} alt="" className="h-36 w-80 rounded-full object-cover opacity-[0.35] blur-2xl saturate-150" />
+        </div>
+      )}
+      <div className={pill}>
+        <ArtistAvatar id={id} name={name} photoUrl={photoUrl} isBase={isBase} />
+        <span>{name}</span>
+      </div>
     </div>
   );
 }
