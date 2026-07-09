@@ -1,0 +1,25 @@
+{
+  "degrees": 1,
+  "path": [
+    {
+      "id": "5f6ab597-f57a-40da-be9e-adad48708203",
+      "name": "Dr. Dre",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Dr.%20Dre%20in%202011.jpg?width=320"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "Compton",
+      "track_id": "1wf4LnpdAhLaoI2WwYDKAE",
+      "artists": [
+        "Dr. Dre",
+        "Kendrick Lamar"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "degrees": 1,
+  "path": [
+    {
+      "id": "48262e82-db9f-4a92-b650-dfef979b73ec",
+      "name": "Future",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Future%20-%20Openair%20Frauenfeld%202019%2005.jpg?width=320"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "Like That",
+      "track_id": "2tudvzsrR56uom6smgOcSf",
+      "artists": [
+        "Future",
+        "Kendrick Lamar",
+        "Metro Boomin"
+      ]
+    }
+  ]
+}

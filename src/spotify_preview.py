@@ -1,6 +1,16 @@
 """
 Spotify embed preview scraper (plan 008, U1 — GO'd by scripts/spotify_scrape_spike.py).
 
+DEV-ONLY as of plan 2026-07-09-001 (KTD3) — never called by the public app.
+Two independent reasons this stays local-only permanently, not just deferred:
+(1) Spotify tightened anti-bot enforcement after a late-2025 mass-scrape
+incident, and datacenter IPs (exactly what any cloud host gives you) get
+blocked near-immediately, so this would simply fail in production; (2) it's a
+ToS gray area regardless, whereas the public app instead renders Spotify's
+OFFICIAL embed iframe client-side (frontend/app/components/spotify-embed.tsx)
+— zero scraping, zero server-side Spotify audio fetching, fully ToS-clean.
+Kept here because it's still useful for local exploration/debugging.
+
 The Spotify Web API's `preview_url` is dead for dev apps, but the public embed
 page `open.spotify.com/embed/track/{id}` still ships a `__NEXT_DATA__` JSON blob
 containing `audioPreview.url` — a real, directly-playable 30s mp3 on p.scdn.co.
@@ -9,7 +19,7 @@ conservative pacing. This module is the hardened, single-track resolver.
 
 Safe/minimal posture (KTD7): browser-like User-Agent, conservative timeout,
 each track fetched at most once (in-process cache), graceful None on any
-failure (never raises). Demo-scoped — public-traffic guardrails deferred.
+failure (never raises). Local/dev-scoped only — see module docstring above.
 """
 from __future__ import annotations
 

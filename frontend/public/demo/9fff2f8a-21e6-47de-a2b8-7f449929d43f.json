@@ -1,0 +1,25 @@
+{
+  "degrees": 1,
+  "path": [
+    {
+      "id": "9fff2f8a-21e6-47de-a2b8-7f449929d43f",
+      "name": "Drake",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Drake%20July%202016.jpg?width=320"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "Poetic Justice",
+      "track_id": "2P3SLxeQHPqh8qKB6gtJY2",
+      "artists": [
+        "Drake",
+        "Kendrick Lamar"
+      ]
+    }
+  ]
+}

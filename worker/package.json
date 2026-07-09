@@ -1,0 +1,20 @@
+{
+  "name": "rabbit-hole-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.7.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "~2.1.0",
+    "wrangler": "^4.0.0"
+  }
+}

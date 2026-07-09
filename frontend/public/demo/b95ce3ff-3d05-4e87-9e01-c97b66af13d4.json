@@ -1,0 +1,25 @@
+{
+  "degrees": 1,
+  "path": [
+    {
+      "id": "b95ce3ff-3d05-4e87-9e01-c97b66af13d4",
+      "name": "Eminem",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Eminem%202021%20Color%20Corrected.jpg?width=320"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "Love Game",
+      "track_id": "0iMN420Q45isZVNlAqzPTW",
+      "artists": [
+        "Eminem",
+        "Kendrick Lamar"
+      ]
+    }
+  ]
+}

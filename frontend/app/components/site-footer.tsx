@@ -1,5 +1,8 @@
-// Footer carries the non-affiliation disclaimer (KTD5/R3) and the data
-// attribution ported verbatim-in-spirit from the Streamlit app.
+// Footer carries the non-affiliation disclaimer (KTD5/R3), the data
+// attribution ported verbatim-in-spirit from the Streamlit app, and photo
+// attribution (plan 2026-07-09-001, R8 — Wikimedia Commons images are
+// CC-BY/CC-BY-SA and require credit; TheAudioDB/Deezer images are used
+// as-is from their public artist APIs).
 export function SiteFooter() {
   return (
     <footer className="mt-12 border-t border-border-subtle px-6 py-6 text-center text-caption leading-relaxed text-content-tertiary">
@@ -16,8 +19,9 @@ export function SiteFooter() {
         >
           MusicBrainz
         </a>{" "}
-        (CC0). Song previews via Spotify, Apple Music, and Deezer. Not
-        affiliated with Spotify, Apple, Deezer, or the artists.
+        (CC0). Artist photos from Wikimedia Commons, TheAudioDB, and Deezer. Song
+        previews via Spotify. Not affiliated with Spotify, Wikimedia, TheAudioDB,
+        Deezer, or the artists.
       </p>
     </footer>
   );

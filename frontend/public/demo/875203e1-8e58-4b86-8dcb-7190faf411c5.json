@@ -1,0 +1,27 @@
+{
+  "degrees": 1,
+  "path": [
+    {
+      "id": "875203e1-8e58-4b86-8dcb-7190faf411c5",
+      "name": "J. Cole",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/HOTSPOTATL%20-%2021%20Savage%20%26%20J.Cole%20Light%20Birthday%20Bash%20ATL%202023%20On%20FIRE%20%28xu6HKf40MX0%20-%202m38s%29%20%28cropped%29.jpg?width=320"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "They Ready",
+      "track_id": "0YizdApFI24c5SCQREguao",
+      "artists": [
+        "Big K.R.I.T.",
+        "DJ Khaled",
+        "J. Cole",
+        "Kendrick Lamar"
+      ]
+    }
+  ]
+}

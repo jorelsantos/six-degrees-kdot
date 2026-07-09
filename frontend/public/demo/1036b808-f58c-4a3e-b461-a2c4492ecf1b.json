@@ -1,0 +1,44 @@
+{
+  "degrees": 2,
+  "path": [
+    {
+      "id": "1036b808-f58c-4a3e-b461-a2c4492ecf1b",
+      "name": "Nicki Minaj",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Nicki%20Minaj%202025%20%283x4%20cropped%29.jpg?width=320"
+    },
+    {
+      "id": "02339890-0761-44b8-88f6-90977faf9ee5",
+      "name": "Rich Gang",
+      "photo_url": "https://cdn-images.dzcdn.net/images/artist/12eb2156080586e42fc4a4497e148e36/1000x1000-000000-80-0-0.jpg"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "Tapout",
+      "track_id": "7A8d6xGJy2DpNqO2b9DrJu",
+      "artists": [
+        "Birdman",
+        "Future",
+        "Lil Wayne",
+        "Mack Maine",
+        "Nicki Minaj",
+        "Rich Gang"
+      ]
+    },
+    {
+      "song_name": "100 Favors",
+      "track_id": "7qK2YgbLgNtUAnyTlVmY5R",
+      "artists": [
+        "Birdman",
+        "Detail",
+        "Kendrick Lamar",
+        "Rich Gang"
+      ]
+    }
+  ]
+}

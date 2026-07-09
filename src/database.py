@@ -167,6 +167,24 @@ class CollaborationDatabase:
             if "photo_url" not in existing_columns:
                 cursor.execute("ALTER TABLE artists ADD COLUMN photo_url TEXT")
 
+            # Migration guard: path-tree precompute columns (plan
+            # 2026-07-09-001, KTD1). A single-source BFS from Kendrick is
+            # computed once (offline, on the laptop) instead of at request
+            # time. `kendrick_distance` NULL means "not yet computed" for a
+            # fresh DB, and permanently means "unreachable" once the precompute
+            # has run over the whole graph — same ambiguity the frontend
+            # already treats as the honest "not in network" state elsewhere
+            # (spotify_track_id, photo_url). `predecessor_id`/`via_song_id`
+            # are NULL for Kendrick himself (distance 0) and for unreachable
+            # artists. Always fully recomputed by src/path_tree.py; there is
+            # no partial-resume state to preserve across runs.
+            if "kendrick_distance" not in existing_columns:
+                cursor.execute("ALTER TABLE artists ADD COLUMN kendrick_distance INTEGER")
+            if "predecessor_id" not in existing_columns:
+                cursor.execute("ALTER TABLE artists ADD COLUMN predecessor_id TEXT")
+            if "via_song_id" not in existing_columns:
+                cursor.execute("ALTER TABLE artists ADD COLUMN via_song_id INTEGER")
+
             # Collaborations table (edges)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS collaborations (
@@ -720,6 +738,166 @@ class CollaborationDatabase:
             """)
             return {row["artist_id"]: row["degree"] for row in cursor.fetchall()}
 
+    def get_all_popularity(self) -> Dict[str, int]:
+        """Return {artist_id: popularity} for every artist in one pass. Used by
+        the path-tree precompute's predecessor tie-break (plan
+        2026-07-09-001, U2): when several frontier artists reach the same
+        unvisited node in one BFS round, the more popular one wins, for a
+        more recognizable chain."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, popularity FROM artists")
+            return {row["id"]: row["popularity"] for row in cursor.fetchall()}
+
+    def get_all_edge_songs(self) -> Dict[Tuple[str, str], List[Dict]]:
+        """Return {(artist1_id, artist2_id): [{'id', 'name', 'collaborators',
+        'spotify_track_id'}, ...]} for every collaboration edge in one pass
+        (artist1_id < artist2_id, matching the stored ordering from
+        add_collaboration). Used by the path-tree precompute (plan
+        2026-07-09-001, U2) to pick a representative via-song per edge
+        without one query per node, and by the track-ID pre-bake (U4) to
+        re-try a sibling song on the same edge when the chosen one fails to
+        resolve on Spotify."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT c.artist1_id, c.artist2_id, s.id, s.song_name,
+                       s.collaborators, s.spotify_track_id
+                FROM songs s
+                JOIN collaborations c ON s.collaboration_id = c.id
+            """)
+            edges: Dict[Tuple[str, str], List[Dict]] = {}
+            for row in cursor.fetchall():
+                key = (row["artist1_id"], row["artist2_id"])
+                try:
+                    collabs = json.loads(row["collaborators"]) if row["collaborators"] else []
+                except (ValueError, TypeError):
+                    collabs = []
+                edges.setdefault(key, []).append({
+                    "id": row["id"],
+                    "name": row["song_name"],
+                    "collaborators": collabs,
+                    "spotify_track_id": row["spotify_track_id"],
+                })
+            return edges
+
+    def get_artists_needing_track_ids(self, limit: Optional[int] = None,
+                                      artist_ids: Optional[List[str]] = None) -> List[Dict]:
+        """Return artists whose current via-song does not yet have a REAL
+        resolved Spotify track id — NULL (unchecked) or NO_TRACK_SENTINEL
+        (this specific song was a confirmed miss, but a sibling song on the
+        same edge may not have been tried yet) — ordered by predecessor
+        popularity descending (plan 2026-07-09-001, U4/KTD5 priority: the
+        artists reached through the most popular hubs matter most, since
+        those hubs anchor the most downstream chains). Each row:
+        {'artist_id', 'predecessor_id', 'via_song_id'}.
+
+        `artist_ids`, when given, restricts candidates to exactly this set —
+        used to force-resolve a specific chain's hops (e.g. the Tier A
+        showcase artists, plan 2026-07-09-001, U5) regardless of where they'd
+        otherwise fall in the popularity-priority queue. Already-resolved
+        seed artists are still skipped for free (the NULL/sentinel check
+        applies either way)."""
+        sql = """
+            SELECT a.id AS artist_id, a.predecessor_id, a.via_song_id
+            FROM artists a
+            JOIN songs s ON s.id = a.via_song_id
+            JOIN artists pred ON pred.id = a.predecessor_id
+            WHERE a.kendrick_distance IS NOT NULL
+              AND a.kendrick_distance > 0
+              AND a.via_song_id IS NOT NULL
+              AND (s.spotify_track_id IS NULL OR s.spotify_track_id = ?)
+        """
+        params: List = [NO_TRACK_SENTINEL]
+        if artist_ids:
+            placeholders = ",".join("?" for _ in artist_ids)
+            sql += f" AND a.id IN ({placeholders})"
+            params.extend(artist_ids)
+        sql += " ORDER BY pred.popularity DESC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            return [
+                {
+                    "artist_id": row["artist_id"],
+                    "predecessor_id": row["predecessor_id"],
+                    "via_song_id": row["via_song_id"],
+                }
+                for row in cursor.fetchall()
+            ]
+
+    def set_via_song_id_bulk(self, rows: List[Tuple[str, int]]) -> None:
+        """Rewire (artist_id, via_song_id) pairs — distance/predecessor stay
+        untouched. Used by the track-ID pre-bake (U4) when the original pick
+        fails to resolve but a sibling song on the same edge does."""
+        if not rows:
+            return
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany(
+                "UPDATE artists SET via_song_id = ? WHERE id = ?",
+                [(song_id, aid) for aid, song_id in rows])
+
+    def set_path_tree_bulk(
+        self, rows: List[Tuple[str, Optional[int], Optional[str], Optional[int]]]
+    ) -> None:
+        """Bulk-persist the path-tree precompute: rows of
+        (artist_id, kendrick_distance, predecessor_id, via_song_id). Full
+        recompute semantics — callers pass every artist's row (unreachable
+        artists included, with all-NULL fields) so a rerun always reflects
+        the current graph rather than a stale partial state."""
+        if not rows:
+            return
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany("""
+                UPDATE artists
+                SET kendrick_distance = ?, predecessor_id = ?, via_song_id = ?
+                WHERE id = ?
+            """, [(dist, pred, song, aid) for aid, dist, pred, song in rows])
+
+    def get_path_tree_row(self, artist_id: str) -> Optional[Dict]:
+        """Fetch one artist's precomputed path-tree row (distance,
+        predecessor, via-song) — used by validation and tests."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT kendrick_distance, predecessor_id, via_song_id
+                FROM artists WHERE id = ?
+            """, (artist_id,))
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return {
+                "kendrick_distance": row["kendrick_distance"],
+                "predecessor_id": row["predecessor_id"],
+                "via_song_id": row["via_song_id"],
+            }
+
+    def get_all_path_tree_rows(self) -> List[Dict]:
+        """Return every artist's path-tree row (id, distance, predecessor,
+        via-song) for full-table validation — checking every row an
+        implementer never has to inspect individually, since it is the
+        served data set forever (plan 2026-07-09-001, U2)."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, kendrick_distance, predecessor_id, via_song_id
+                FROM artists
+            """)
+            return [
+                {
+                    "id": row["id"],
+                    "kendrick_distance": row["kendrick_distance"],
+                    "predecessor_id": row["predecessor_id"],
+                    "via_song_id": row["via_song_id"],
+                }
+                for row in cursor.fetchall()
+            ]
+
     def get_unenriched_artists(self) -> List[Dict]:
         """
         Return artists whose popularity has not yet been resolved by the
@@ -750,6 +928,36 @@ class CollaborationDatabase:
             cursor.executemany("""
                 UPDATE artists SET popularity = ?, pop_enriched = 1 WHERE id = ?
             """, [(int(v), aid) for aid, v in rows])
+
+    def get_unphotographed_artists(self, min_degree: int = 0,
+                                   limit: Optional[int] = None,
+                                   artist_ids: Optional[List[str]] = None) -> List[Dict]:
+        """Return artists whose photo_url hasn't been resolved yet (NULL —
+        unchecked, or a prior source errored and left it retryable), ordered
+        by prominence (popularity, then degree) so the pre-bake resolves the
+        most-visited artists first (plan 2026-07-09-001, U3). `min_degree`
+        bounds runtime to artists touching this many collaborations; `limit`
+        caps the batch (measuring a first pass). `artist_ids`, when given,
+        restricts candidates to exactly this set (min_degree is ignored) —
+        used to force-resolve a specific chain's hops (e.g. the Tier A
+        showcase artists, U5) regardless of the popularity-priority queue."""
+        sql = "SELECT id, name FROM artists WHERE photo_url IS NULL"
+        params: List = []
+        if artist_ids:
+            placeholders = ",".join("?" for _ in artist_ids)
+            sql += f" AND id IN ({placeholders})"
+            params.extend(artist_ids)
+        else:
+            sql += " AND degree >= ?"
+            params.append(min_degree)
+        sql += " ORDER BY popularity DESC, degree DESC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            return [{"id": row["id"], "name": row["name"]} for row in cursor.fetchall()]
 
     def get_songs_without_track_id(self, min_degree: int = 0,
                                    limit: Optional[int] = None) -> List[Dict]:
@@ -1039,6 +1247,41 @@ class CollaborationDatabase:
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM artists")
             return [row['id'] for row in cursor.fetchall()]
+
+    def get_serving_export_rows(self) -> List[Dict]:
+        """Return one denormalized row per artist for the Cloudflare D1
+        serving-DB export (plan 2026-07-09-001, KTD6/U6): id, name,
+        name_norm, popularity, degree, photo_url, kendrick_distance,
+        predecessor_id, via_song_title, via_song_collaborators (raw JSON
+        string, the credited lineup), via_track_id. `degree` is required by
+        the frontend's SearchResult contract (typeahead 'N collabs' label +
+        duplicate-name disambiguation) — a coherence-review fix folded into
+        KTD6. `via_song_collaborators` is required by the Worker's lazy
+        resolve-track endpoint (U7): the Spotify accept-logic guard needs the
+        full credited lineup, not just the two chain endpoints, to avoid
+        accepting a same-titled song by an unrelated artist. Raw sentinel
+        values (PHOTO_NONE_SENTINEL, NO_TRACK_SENTINEL) pass through
+        unchanged; the exporter script decides how to clean them for the
+        serving shape."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT a.id, a.name, a.name_norm, a.popularity, a.degree,
+                       a.photo_url, a.kendrick_distance, a.predecessor_id,
+                       s.song_name AS via_song_title, s.collaborators AS via_song_collaborators,
+                       s.spotify_track_id AS via_track_id
+                FROM artists a
+                LEFT JOIN songs s ON s.id = a.via_song_id
+            """)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_all_aliases(self) -> List[Dict]:
+        """Return every (artist_id, alias, alias_norm) row for the serving-DB
+        export's search index (plan 2026-07-09-001, U6)."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT artist_id, alias, alias_norm FROM artist_aliases")
+            return [dict(row) for row in cursor.fetchall()]
 
 
 def disambiguate_labels(candidates: List[Dict]) -> List[str]:

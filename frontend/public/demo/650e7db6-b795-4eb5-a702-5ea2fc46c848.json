@@ -1,0 +1,40 @@
+{
+  "degrees": 2,
+  "path": [
+    {
+      "id": "650e7db6-b795-4eb5-a702-5ea2fc46c848",
+      "name": "Lady Gaga",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Lady%20Gaga%20at%20the%20White%20House%20in%202023%20%281%29.jpg?width=320"
+    },
+    {
+      "id": "028e1863-cab4-4a3d-9dd9-91c682c91005",
+      "name": "The Lonely Island",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/The%20Lonely%20Island.jpg?width=320"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "3-Way (The Golden Rule)",
+      "track_id": "5orUhwRVuVCtRYxg3FzidD",
+      "artists": [
+        "Justin Timberlake",
+        "Lady Gaga",
+        "The Lonely Island"
+      ]
+    },
+    {
+      "song_name": "YOLO",
+      "track_id": "6XmT1eehtQjAtuZL3gMBNT",
+      "artists": [
+        "Adam Levine",
+        "Kendrick Lamar",
+        "The Lonely Island"
+      ]
+    }
+  ]
+}

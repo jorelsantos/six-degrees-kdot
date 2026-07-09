@@ -7,6 +7,13 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "frontend",
       "port": 3000
+    },
+    {
+      "name": "rabbit-hole-worker",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["wrangler", "dev", "--port", "8787"],
+      "cwd": "worker",
+      "port": 8787
     }
   ]
 }

@@ -1,0 +1,6 @@
+# Local wrangler dev secrets (copy to .dev.vars, which is gitignored).
+# In production these are provisioned with:
+#   wrangler secret put SPOTIFY_CLIENT_ID
+#   wrangler secret put SPOTIFY_CLIENT_SECRET
+SPOTIFY_CLIENT_ID=your_client_id_here
+SPOTIFY_CLIENT_SECRET=your_client_secret_here

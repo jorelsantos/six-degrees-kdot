@@ -1,0 +1,25 @@
+{
+  "degrees": 1,
+  "path": [
+    {
+      "id": "c8b03190-306c-4120-bb0b-6f2ebfc06ea9",
+      "name": "The Weeknd",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/The%20Weeknd%20Portrait%20by%20Brian%20Ziff.jpg?width=320"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "Sidewalks",
+      "track_id": "4h90qkbnW1Qq6pBhoPvwko",
+      "artists": [
+        "Kendrick Lamar",
+        "The Weeknd"
+      ]
+    }
+  ]
+}

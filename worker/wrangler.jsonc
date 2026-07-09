@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "rabbit-hole-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-10",
+  "compatibility_flags": ["nodejs_compat"],
+  // Create with: wrangler d1 create rabbit-hole-serving
+  // Then paste the returned database_id below and import per
+  // docs/RUNBOOK.md (scripts/export_serving_db.py's printed commands).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rabbit-hole-serving",
+      "database_id": "REPLACE_WITH_REAL_D1_DATABASE_ID"
+    }
+  ]
+  // Spotify client-credentials secrets are NOT set here — provision with:
+  //   wrangler secret put SPOTIFY_CLIENT_ID
+  //   wrangler secret put SPOTIFY_CLIENT_SECRET
+}

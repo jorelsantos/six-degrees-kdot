@@ -1,0 +1,25 @@
+{
+  "degrees": 1,
+  "path": [
+    {
+      "id": "73e5e69d-3554-40d8-8516-00cb38737a1c",
+      "name": "Rihanna",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Rihanna%20visits%20U.S.%20Embassy%20in%20Barbados%202024%20%28cropped%29.jpg?width=320"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "LOYALTY.",
+      "track_id": "6SwRhMLwNqEi6alNPVG00n",
+      "artists": [
+        "Kendrick Lamar",
+        "Rihanna"
+      ]
+    }
+  ]
+}

@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { fetchConnection, type Connection, type ConnectionResult } from "@/lib/api";
-import { PreviewCard } from "./preview-player";
+import { fetchConnection, resolveTrack, type Connection, type ConnectionResult } from "@/lib/api";
+import { ChainNode, DownArrow } from "./chain-display";
+import { SpotifyEmbed } from "./spotify-embed";
 
 export function ConnectionView({
   artistId,
@@ -13,17 +14,16 @@ export function ConnectionView({
   showNotice: boolean;
 }) {
   const [result, setResult] = useState<ConnectionResult | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let live = true;
     setResult(null);
-    fetchConnection(artistId)
-      .then((r) => live && setResult(r))
-      .catch(() => live && setResult({ status: "not_found" }));
+    fetchConnection(artistId).then((r) => live && setResult(r));
     return () => {
       live = false;
     };
-  }, [artistId]);
+  }, [artistId, retryCount]);
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-12">
@@ -35,6 +35,7 @@ export function ConnectionView({
         {result === null && <LoadingSkeleton />}
         {result?.status === "not_found" && <NotFound />}
         {result?.status === "no_path" && <NoPath />}
+        {result?.status === "error" && <Busy onRetry={() => setRetryCount((c) => c + 1)} />}
         {result?.status === "ok" && (
           <ConnectionResult connection={result.connection} showNotice={showNotice} />
         )}
@@ -69,6 +70,27 @@ function NoPath() {
       title="No connection found"
       body="This artist exists in our data but doesn't have a collaboration path to Kendrick Lamar."
     />
+  );
+}
+
+// R7: a busy/error backend must never look like "artist not found" — this is
+// what a rate-limited or momentarily-down Worker actually shows, with a real
+// retry action (not just descriptive copy).
+function Busy({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-surface-raised p-8 text-center">
+      <h1 className="text-headingSm font-bold">We&apos;re busy</h1>
+      <p className="mt-2 text-content-secondary">
+        Something went wrong on our end. This usually clears up fast.
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-6 inline-block rounded-pill bg-brand px-6 py-3 font-bold uppercase tracking-[0.1em] text-black"
+      >
+        Try again
+      </button>
+    </div>
   );
 }
 
@@ -125,26 +147,29 @@ function ConnectionResult({
         </p>
       </div>
 
-      {/* Six-degrees chain: artist → one preview card → arrow → next → Kendrick.
-          The vertical chain is the sole path viz now (the top transit-line was
-          removed in plan 010, R2 — it duplicated this). */}
+      {/* Six-degrees chain: artist → Spotify embed → arrow → next → Kendrick
+          (plan 2026-07-09-001, U8 — the official embed replaces the scraped
+          preview waterfall; same rendering path as the Tier A demo). */}
       <div className="mt-8 flex flex-col items-center">
         {connection.path.map((artist, i) => (
           <div key={artist.id} className="flex w-full flex-col items-center">
             <ChainNode
               id={artist.id}
               name={artist.name}
-              photoUrl={artist.photo_url ?? null}
+              photoUrl={artist.photo_url}
               isBase={i === lastIndex}
             />
-            {i < connection.connections.length && (
+            {i < connection.hops.length && (
               <>
                 <DownArrow />
-                <PreviewCard
-                  fromId={connection.connections[i].from.id}
-                  toId={connection.connections[i].to.id}
-                  fromName={connection.connections[i].from.name}
-                  toName={connection.connections[i].to.name}
+                <ResolvingSpotifyEmbed
+                  artistId={artist.id}
+                  trackId={connection.hops[i].track_id}
+                  songName={connection.hops[i].song_name}
+                  artistLine={
+                    connection.hops[i].artists.join(", ") ||
+                    `${artist.name}, ${connection.path[i + 1]?.name ?? ""}`
+                  }
                 />
                 <DownArrow />
               </>
@@ -156,94 +181,41 @@ function ConnectionResult({
   );
 }
 
-function ChainNode({
-  id,
-  name,
-  photoUrl,
-  isBase,
+// Wires SpotifyEmbed to the lazy resolve-on-view flow (KTD5): a hop whose
+// via-song has never been checked (track_id null) triggers one resolve-track
+// call on mount; a hop already resolved — real id OR confirmed no-match —
+// renders straight through with zero network cost.
+function ResolvingSpotifyEmbed({
+  artistId,
+  trackId,
+  songName,
+  artistLine,
 }: {
-  id: string;
-  name: string;
-  photoUrl: string | null;
-  isBase: boolean;
+  artistId: string;
+  trackId: string | null;
+  songName: string | null;
+  artistLine: string;
 }) {
-  return (
-    <div
-      className={
-        isBase
-          ? "flex items-center gap-2.5 rounded-pill bg-brand/90 py-1.5 pl-1.5 pr-5 text-body font-bold text-black"
-          : "flex items-center gap-2 rounded-pill border border-border-strong bg-surface-raised py-1.5 pl-1.5 pr-4 text-bodySm font-medium text-content-primary"
+  const [resolved, setResolved] = useState<string | null>(trackId);
+  const [checked, setChecked] = useState(trackId !== null);
+
+  useEffect(() => {
+    if (checked) return;
+    let live = true;
+    resolveTrack(artistId).then((id) => {
+      if (live) {
+        setResolved(id);
+        setChecked(true);
       }
-    >
-      <ArtistAvatar id={id} name={name} photoUrl={photoUrl} isBase={isBase} />
-      <span>{name}</span>
-    </div>
-  );
-}
+    });
+    return () => {
+      live = false;
+    };
+  }, [artistId, checked]);
 
-// Deterministic initials for the no-photo fallback: first letters of the first
-// two words, or the first two chars of a single-word stage name ("Drake" → DR,
-// "SZA" → SZ). Never empty — degrades to "?" for a blank name.
-function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
-  const w = words[0] ?? "";
-  return (w.slice(0, 2) || "?").toUpperCase();
-}
-
-// Deterministic muted background for the initials circle, hashed from the MBID
-// so a given artist is always the same color (Q3). Dark/desaturated to sit
-// under white text and not fight the brand green.
-function avatarColor(id: string): string {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 42%, 32%)`;
-}
-
-// Artist photo (plan 010, R3). Shows the resolved photo, falling back to the
-// initials circle both when there's no URL AND when a persisted URL fails to
-// load at runtime (onError) — Commons/Deezer/TheAudioDB hotlinks can rot, and
-// KTD3 requires we never render a broken image.
-function ArtistAvatar({
-  id,
-  name,
-  photoUrl,
-  isBase,
-}: {
-  id: string;
-  name: string;
-  photoUrl: string | null;
-  isBase: boolean;
-}) {
-  const [broken, setBroken] = useState(false);
-  const size = isBase ? "h-9 w-9" : "h-8 w-8";
-
-  if (photoUrl && !broken) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element -- remote CDN photos
-      // (Commons/TheAudioDB/Deezer) aren't in images.remotePatterns; plain <img>
-      // mirrors the preview-player.tsx pattern and adds onError (which it lacks).
-      <img
-        src={photoUrl}
-        alt=""
-        onError={() => setBroken(true)}
-        className={`${size} shrink-0 rounded-full object-cover shadow-[0_2px_6px_rgba(0,0,0,0.35)]`}
-      />
-    );
+  if (!checked) {
+    return <div className="rh-skeleton mx-auto my-2 h-[152px] w-full max-w-md rounded-xl" aria-label="Finding a preview" />;
   }
 
-  return (
-    <div
-      aria-hidden="true"
-      style={{ background: avatarColor(id) }}
-      className={`${size} flex shrink-0 items-center justify-center rounded-full text-caption font-bold text-white/90`}
-    >
-      {initials(name)}
-    </div>
-  );
-}
-
-function DownArrow() {
-  return <div aria-hidden="true" className="my-1 h-4 w-[2px] rounded bg-brand/30" />;
+  return <SpotifyEmbed trackId={resolved} songName={songName} artistLine={artistLine} />;
 }

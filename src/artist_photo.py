@@ -186,6 +186,61 @@ def _deezer_by_name(name: str, timeout: float) -> Optional[Tuple[str, str]]:
     return (returned_name or "", picture)
 
 
+# --- Stage-scoped seams for the offline pre-bake (plan 2026-07-09-001, U3) --
+#
+# resolve() above is tuned for the LIVE request path: budgeted, single call,
+# fixed Wikidata->TheAudioDB->Deezer order, silently degrades every failure to
+# UNAVAILABLE. The offline pre-bake needs the OPPOSITE shape (KTD4): each tier
+# run to completion across the whole graph with its own pacing, Deezer before
+# TheAudioDB (Deezer is the bulk workhorse; TheAudioDB's 30/min test key is
+# reserved for the small remaining tail), and callers that want to see and
+# react to exceptions (rate-limit abort) rather than have them swallowed. These
+# thin wrappers reuse the exact same fetchers, validation, and name-match
+# guard as resolve() so both paths agree on what counts as a hit.
+
+def resolve_wikidata_batch(
+    mbids: List[str], *, timeout: float = DEFAULT_TIMEOUT,
+    wikidata_fetch: Callable[[List[str], float], Dict[str, str]] = _wikidata_batch,
+) -> Dict[str, str]:
+    """One Wikidata batch call -> {mbid: validated_url} for the MBIDs that had
+    an image. MBIDs with no P18 are simply absent (a clean miss, not an
+    error). Raises the fetch's exception straight through (network/HTTP/429)
+    so a batch driver can decide whether to retry the chunk or abort the run."""
+    hits = wikidata_fetch(mbids, timeout)
+    out: Dict[str, str] = {}
+    for mbid, url in hits.items():
+        valid = _validate_url(url)
+        if valid:
+            out[mbid] = valid
+    return out
+
+
+def resolve_deezer_single(
+    name: str, *, timeout: float = DEFAULT_TIMEOUT,
+    deezer_fetch: Callable[[str, float], Optional[Tuple[str, str]]] = _deezer_by_name,
+) -> Optional[str]:
+    """Deezer-only lookup for one artist by name: a validated photo URL if the
+    top hit passes the exact-name guard, else None (a clean miss). Raises the
+    fetch's exception straight through."""
+    cand = deezer_fetch(name, timeout)
+    if cand is None:
+        return None
+    returned_name, picture = cand
+    if _name_matches(name, returned_name):
+        return _validate_url(picture)
+    return None
+
+
+def resolve_theaudiodb_single(
+    mbid: str, *, timeout: float = DEFAULT_TIMEOUT,
+    theaudiodb_fetch: Callable[[str, float], Optional[str]] = _theaudiodb_by_mbid,
+) -> Optional[str]:
+    """TheAudioDB-only lookup for one artist by MBID: a validated photo URL or
+    None (a clean miss). Raises the fetch's exception straight through."""
+    thumb = theaudiodb_fetch(mbid, timeout)
+    return _validate_url(thumb)
+
+
 def resolve(
     artists: List[Tuple[str, str]],
     *,

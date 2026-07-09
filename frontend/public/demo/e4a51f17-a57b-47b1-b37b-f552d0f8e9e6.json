@@ -1,0 +1,25 @@
+{
+  "degrees": 1,
+  "path": [
+    {
+      "id": "e4a51f17-a57b-47b1-b37b-f552d0f8e9e6",
+      "name": "Travis Scott",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Travis%20Scott%20-%20Openair%20Frauenfeld%202019%2008.jpg?width=320"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "Big Shot",
+      "track_id": "5cXg9IQS34FzLVdHhp7hu7",
+      "artists": [
+        "Kendrick Lamar",
+        "Travis Scott"
+      ]
+    }
+  ]
+}

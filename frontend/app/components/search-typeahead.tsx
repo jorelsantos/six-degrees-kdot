@@ -22,6 +22,10 @@ export function SearchTypeahead() {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [searched, setSearched] = useState(false);
+  // R7: a failed request is NOT the same as "no artist by that name" — this
+  // must render its own row with a real retry action, not a silent empty box.
+  const [searchError, setSearchError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const listId = "artist-suggestions";
 
@@ -32,30 +36,42 @@ export function SearchTypeahead() {
     if (q.length < 2) {
       setCandidates([]);
       setSearched(false);
+      setSearchError(false);
       setPending(false);
       abortRef.current?.abort();
       return;
     }
     const delay = q.length <= 3 ? SHORT_QUERY_DEBOUNCE_MS : DEBOUNCE_MS;
     setPending(true);
+    setSearchError(false);
     const handle = setTimeout(async () => {
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       try {
-        const results = await searchArtists(q, ctrl.signal);
-        setCandidates(results);
-        setSearched(true);
-        setActive(-1);
-        setOpen(true);
+        const result = await searchArtists(q, ctrl.signal);
+        if (result.status === "error") {
+          setCandidates([]);
+          setSearchError(true);
+          setOpen(true);
+        } else {
+          setCandidates(result.candidates);
+          setSearched(true);
+          setActive(-1);
+          setOpen(true);
+        }
       } catch (err) {
-        if ((err as Error).name !== "AbortError") setCandidates([]);
+        if ((err as Error).name !== "AbortError") {
+          setCandidates([]);
+          setSearchError(true);
+          setOpen(true);
+        }
       } finally {
         setPending(false);
       }
     }, delay);
     return () => clearTimeout(handle);
-  }, [query]);
+  }, [query, retryCount]);
 
   const go = useCallback(
     (c: Candidate, viaNotice: boolean) => {
@@ -94,7 +110,7 @@ export function SearchTypeahead() {
   }
 
   const showDropdown = open && query.trim().length >= 2;
-  const showEmpty = showDropdown && searched && !pending && candidates.length === 0;
+  const showEmpty = showDropdown && searched && !pending && !searchError && candidates.length === 0;
 
   return (
     <div className="relative mx-auto w-full max-w-md">
@@ -136,7 +152,7 @@ export function SearchTypeahead() {
         )}
       </div>
 
-      {showDropdown && (candidates.length > 0 || showEmpty) && (
+      {showDropdown && (candidates.length > 0 || showEmpty || searchError) && (
         <ul
           id={listId}
           role="listbox"
@@ -170,6 +186,21 @@ export function SearchTypeahead() {
           {showEmpty && (
             <li className="px-6 py-4 text-bodySm text-content-secondary">
               No artist by that name in the network. Try a different spelling.
+            </li>
+          )}
+          {searchError && (
+            <li className="flex items-center justify-between px-6 py-4 text-bodySm text-content-secondary">
+              <span>Search hiccuped on our end.</span>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setRetryCount((c) => c + 1);
+                }}
+                className="shrink-0 font-bold text-brand hover:underline"
+              >
+                Try again
+              </button>
             </li>
           )}
         </ul>

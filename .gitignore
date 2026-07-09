@@ -136,5 +136,9 @@ dmypy.json
 data/*
 !data/.gitkeep
 
+# Cloudflare D1 serving-DB export (plan 2026-07-09-001, U6) — regenerable via
+# scripts/export_serving_db.py, not source.
+worker/export/
+
 # macOS
 .DS_Store

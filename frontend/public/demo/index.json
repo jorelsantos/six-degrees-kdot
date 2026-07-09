@@ -1,0 +1,98 @@
+[
+  {
+    "id": "9fff2f8a-21e6-47de-a2b8-7f449929d43f",
+    "name": "Drake",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Drake%20July%202016.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "272989c8-5535-492d-a25c-9f58803e027f",
+    "name": "SZA",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-19%20-%2054683179509%20%28cropped%29%20%28cropped%29.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "859d0860-d480-4efd-970c-c05d5f1776b8",
+    "name": "Beyonc\u00e9",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Beyonc%C3%A9%20-%20Tottenham%20Hotspur%20Stadium%20-%201st%20June%202023%20%2810%20of%20118%29%20%2852946364598%29%20%28best%20crop%29.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "73e5e69d-3554-40d8-8516-00cb38737a1c",
+    "name": "Rihanna",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Rihanna%20visits%20U.S.%20Embassy%20in%20Barbados%202024%20%28cropped%29.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "b95ce3ff-3d05-4e87-9e01-c97b66af13d4",
+    "name": "Eminem",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Eminem%202021%20Color%20Corrected.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "164f0d73-1234-4e2c-8743-d77bf2191051",
+    "name": "Ye",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Kanye%20West%20at%20the%202009%20Tribeca%20Film%20Festival%20%28crop%202%29.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "48262e82-db9f-4a92-b650-dfef979b73ec",
+    "name": "Future",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Future%20-%20Openair%20Frauenfeld%202019%2005.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "e4a51f17-a57b-47b1-b37b-f552d0f8e9e6",
+    "name": "Travis Scott",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Travis%20Scott%20-%20Openair%20Frauenfeld%202019%2008.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "875203e1-8e58-4b86-8dcb-7190faf411c5",
+    "name": "J. Cole",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/HOTSPOTATL%20-%2021%20Savage%20%26%20J.Cole%20Light%20Birthday%20Bash%20ATL%202023%20On%20FIRE%20%28xu6HKf40MX0%20-%202m38s%29%20%28cropped%29.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "f90e8b26-9e52-4669-a5c9-e28529c47894",
+    "name": "Snoop Dogg",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Snoop%20Dogg%202023%20%2853775197331%29%20%28cropped%29%20%28cropped%29.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "5f6ab597-f57a-40da-be9e-adad48708203",
+    "name": "Dr. Dre",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Dr.%20Dre%20in%202011.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "c8b03190-306c-4120-bb0b-6f2ebfc06ea9",
+    "name": "The Weeknd",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/The%20Weeknd%20Portrait%20by%20Brian%20Ziff.jpg?width=320",
+    "degrees": 1
+  },
+  {
+    "id": "b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d",
+    "name": "The Beatles",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Beatles%20ad%201965%20just%20the%20beatles%20crop.jpg?width=320",
+    "degrees": 2
+  },
+  {
+    "id": "650e7db6-b795-4eb5-a702-5ea2fc46c848",
+    "name": "Lady Gaga",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Lady%20Gaga%20at%20the%20White%20House%20in%202023%20%281%29.jpg?width=320",
+    "degrees": 2
+  },
+  {
+    "id": "f4fdbb4c-e4b7-47a0-b83b-d91bbfcfa387",
+    "name": "Ariana Grande",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Ariana%20Grande%20promoting%20Wicked%20%282024%29%203%20%28cropped%29.jpg?width=320",
+    "degrees": 2
+  },
+  {
+    "id": "1036b808-f58c-4a3e-b461-a2c4492ecf1b",
+    "name": "Nicki Minaj",
+    "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Nicki%20Minaj%202025%20%283x4%20cropped%29.jpg?width=320",
+    "degrees": 2
+  }
+]

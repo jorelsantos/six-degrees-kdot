@@ -1,0 +1,25 @@
+{
+  "degrees": 1,
+  "path": [
+    {
+      "id": "859d0860-d480-4efd-970c-c05d5f1776b8",
+      "name": "Beyonc\u00e9",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Beyonc%C3%A9%20-%20Tottenham%20Hotspur%20Stadium%20-%201st%20June%202023%20%2810%20of%20118%29%20%2852946364598%29%20%28best%20crop%29.jpg?width=320"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "NILE",
+      "track_id": "0lboDHM9hSR5j5CFlWDR9k",
+      "artists": [
+        "Beyonc\u00e9",
+        "Kendrick Lamar"
+      ]
+    }
+  ]
+}

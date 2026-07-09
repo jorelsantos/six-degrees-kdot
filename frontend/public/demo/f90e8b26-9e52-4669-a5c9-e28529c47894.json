@@ -1,0 +1,28 @@
+{
+  "degrees": 1,
+  "path": [
+    {
+      "id": "f90e8b26-9e52-4669-a5c9-e28529c47894",
+      "name": "Snoop Dogg",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Snoop%20Dogg%202023%20%2853775197331%29%20%28cropped%29%20%28cropped%29.jpg?width=320"
+    },
+    {
+      "id": "381086ea-f511-4aba-bdf9-71c753dc5077",
+      "name": "Kendrick Lamar",
+      "photo_url": "https://commons.wikimedia.org/wiki/Special:FilePath/KendrickSZASPurs230725-144%20%28cropped%29%20desaturated.jpg?width=320"
+    }
+  ],
+  "hops": [
+    {
+      "song_name": "Drones",
+      "track_id": "6i5Ye3GgVSvvsStTN1cjYL",
+      "artists": [
+        "James Fauntleroy",
+        "Kendrick Lamar",
+        "Snoop Dogg",
+        "Terrace Martin",
+        "Ty Dolla $ign"
+      ]
+    }
+  ]
+}

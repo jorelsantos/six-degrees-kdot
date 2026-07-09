@@ -1,6 +1,15 @@
 """
 FastAPI wrapper over the Rabbit Hole engine (plan 2026-07-06-003, U2).
 
+LOCAL DEV / VALIDATION TOOL ONLY as of plan 2026-07-09-001 (U9) — the public
+app is served by the Cloudflare Worker (worker/src/index.ts) over the
+precomputed path tree in D1, not this API. This module still matters for two
+things: (1) local frontend/engine development against the live MusicBrainz
+graph, and (2) the BFS oracle that src/path_tree.py's precompute validates
+itself against (`PathFinder` here is ground truth). Nothing here is deleted —
+it stays exactly as capable as it always was, just no longer what production
+traffic hits.
+
 The Python layer stays the single source of truth for ranking, resolution,
 pathfinding, and preview fetching. This wrapper serializes engine output
 verbatim — it never re-ranks or re-implements search policy (R2). The Next.js
