@@ -9,6 +9,14 @@ import type { NextConfig } from "next";
 const API_ORIGIN = process.env.API_ORIGIN ?? "http://127.0.0.1:8787";
 
 const nextConfig: NextConfig = {
+  // Next 16 dev hardening: the dev server treats a page loaded from 127.0.0.1
+  // as a foreign origin vs. `localhost` and blocks its own /_next/* dev
+  // resources (HMR, RSC refresh, fonts) — which silently prevents client
+  // hydration when the app is opened via 127.0.0.1 (browser preview tooling,
+  // some LAN setups). Allowing both loopback hosts keeps local hydration
+  // working regardless of which one is used. Dev-only; no production effect.
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
+
   // Same-origin proxy (KTD2): the browser only ever calls /api/* on :3000;
   // Next forwards to the Worker. No CORS, no client-side API-origin env
   // plumbing, and the deploy story stays origin-stable.
