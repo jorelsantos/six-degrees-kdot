@@ -26,8 +26,8 @@ export function ChainNode({
     <div
       className={
         isBase
-          ? "flex items-center gap-2.5 rounded-pill bg-brand/90 py-1.5 pl-1.5 pr-5 text-body font-bold text-black"
-          : "flex items-center gap-2 rounded-pill border border-border-strong bg-surface-raised py-1.5 pl-1.5 pr-4 text-bodySm font-medium text-content-primary"
+          ? "flex items-center gap-3.5 rounded-pill bg-brand/90 py-2 pl-2 pr-7 text-headingSm font-bold text-black"
+          : "flex items-center gap-3 rounded-pill border border-border-strong bg-surface-raised py-2 pl-2 pr-6 text-body font-semibold text-content-primary"
       }
     >
       <ArtistAvatar id={id} name={name} photoUrl={photoUrl} isBase={isBase} />
@@ -61,11 +61,12 @@ export function avatarColor(id: string): string {
 // load at runtime (onError) — Commons/Deezer/TheAudioDB hotlinks can rot, and
 // KTD3 requires we never render a broken image.
 //
-// object-top (plan 2026-07-09-001, U5): most resolved photos are headshot
-// crops where the face sits in the upper portion of the source image;
-// object-cover's default center crop can clip the top of the head or waste
-// the circle on shoulders/background. Biasing the crop upward keeps the face
-// centered in the circle for the common case without a per-photo fix.
+// Larger avatars (plan 2026-07-09-002, U3): the earlier 32-36px circles were
+// too small to read the face — the whole point of the photos. At 56-64px the
+// photo is clearly visible, and centered `object-cover` (no upward bias) keeps
+// the subject framed without wasting the circle. `object-position: 50% 40%`
+// nudges slightly above dead-center so headshots (face in the upper half) sit
+// right without the old object-top hack that clipped foreheads on wider crops.
 function ArtistAvatar({
   id,
   name,
@@ -78,18 +79,19 @@ function ArtistAvatar({
   isBase: boolean;
 }) {
   const [broken, setBroken] = useState(false);
-  const size = isBase ? "h-9 w-9" : "h-8 w-8";
+  const size = isBase ? "h-16 w-16" : "h-14 w-14";
 
   if (photoUrl && !broken) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- remote CDN photos
       // (Commons/TheAudioDB/Deezer) aren't in images.remotePatterns; plain <img>
-      // mirrors the preview-player.tsx pattern and adds onError (which it lacks).
+      // adds the onError fallback that next/image would not.
       <img
         src={photoUrl}
         alt=""
         onError={() => setBroken(true)}
-        className={`${size} shrink-0 rounded-full object-cover object-top shadow-[0_2px_6px_rgba(0,0,0,0.35)]`}
+        style={{ objectPosition: "50% 40%" }}
+        className={`${size} shrink-0 rounded-full object-cover shadow-[0_2px_8px_rgba(0,0,0,0.4)]`}
       />
     );
   }
@@ -98,7 +100,7 @@ function ArtistAvatar({
     <div
       aria-hidden="true"
       style={{ background: avatarColor(id) }}
-      className={`${size} flex shrink-0 items-center justify-center rounded-full text-caption font-bold text-white/90`}
+      className={`${size} flex shrink-0 items-center justify-center rounded-full ${isBase ? "text-xl" : "text-lg"} font-bold text-white/90`}
     >
       {initials(name)}
     </div>
