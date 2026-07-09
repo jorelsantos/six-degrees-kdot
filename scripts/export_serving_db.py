@@ -36,10 +36,11 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import re
 import sqlite3
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
@@ -78,32 +79,89 @@ CREATE INDEX idx_aliases_norm ON aliases(alias_norm);
 """
 
 
-def _make_idempotent(dump: str) -> str:
-    """Rewrite a stock `iterdump()` SQL dump into a form that is safe to run
-    against D1 more than once — so an import interrupted for ANY reason
-    (network blip, Ctrl-C, or hitting D1's free-tier 100k-rows/day write cap
-    partway) is recovered by simply re-running the SAME command, with no
-    manual cleanup and no confusing "table already exists" / duplicate-row
-    errors.
+# One whole `iterdump()` INSERT statement: `INSERT INTO "tbl" VALUES(...);`.
+# DOTALL so a value containing a newline can't break the match; the value
+# tuple `(...)` is captured opaquely, preserving iterdump's own quoting/escaping.
+_INSERT_RE = re.compile(r'^INSERT INTO (?P<tbl>\S+) VALUES\s*(?P<vals>\(.*\))\s*;\s*$', re.DOTALL)
 
-    Three transforms:
-    - Strip the `BEGIN TRANSACTION;`/`COMMIT;` wrapper so statements apply
-      incrementally. Without this, a single atomic transaction that fails on
-      the write cap would roll ALL rows back, and the re-run would restart
-      from zero and hit the same wall forever. Incremental application lets
-      the ~100k rows that landed on day one persist.
-    - `CREATE TABLE`/`CREATE INDEX` -> `... IF NOT EXISTS` so re-running does
-      not error on the objects already created.
-    - `INSERT INTO` -> `INSERT OR IGNORE INTO` so rows already present (by the
-      artists PRIMARY KEY / the aliases UNIQUE constraint) are skipped, not
-      duplicated. A skipped row is not a write, so the re-run spends its daily
-      write budget only on the rows that still need inserting.
+_BATCH_SIZE = 500
+# D1 caps a single SQL statement at ~100 KB, so cap each batch's byte size well
+# under that (rows vary in width — a long collaborator-JSON row is much bigger
+# than a short alias row, so a fixed row count alone can't guarantee the bound).
+_BATCH_BYTES = 60_000
+
+
+def _dump_to_batched_sql(
+    statements: Iterable[str],
+    batch_size: int = _BATCH_SIZE,
+    batch_bytes: int = _BATCH_BYTES,
+) -> str:
+    """Turn a `sqlite3.iterdump()` statement stream into idempotent D1 SQL with
+    multi-row INSERT batches.
+
+    Why batch: a stock dump emits one INSERT per row (~150k statements for the
+    full serving DB), which `wrangler d1 execute --file=` applies painfully
+    slowly. Coalescing rows into `INSERT ... VALUES (…),(…),…;` cuts that to a
+    few thousand statements — seconds, not minutes. A batch is flushed at
+    whichever limit hits first: `batch_size` rows or `batch_bytes` of accumulated
+    tuples (the byte cap keeps every statement under D1's ~100 KB limit).
+
+    Batching operates on whole iterdump *statements*, never on joined lines, so
+    a value containing a newline can never split a statement, and each value
+    tuple is carried through verbatim (iterdump already escaped quotes/apostrophes).
+
+    Idempotence transforms (same intent as the prior line-based version, so a
+    re-run after any interruption is recovered by re-running the same command):
+    - drop the `BEGIN TRANSACTION;`/`COMMIT;` wrapper so statements apply
+      incrementally (a mid-run failure keeps the rows that already landed);
+    - `CREATE TABLE`/`CREATE INDEX` -> `... IF NOT EXISTS`;
+    - `INSERT INTO` -> `INSERT OR IGNORE INTO` so rows already present (artists
+      PRIMARY KEY / aliases UNIQUE) are skipped, not duplicated.
     """
-    dump = dump.replace("BEGIN TRANSACTION;", "").replace("COMMIT;", "")
-    dump = dump.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
-    dump = dump.replace("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ")
-    dump = dump.replace("INSERT INTO ", "INSERT OR IGNORE INTO ")
-    return dump.strip() + "\n"
+    out: List[str] = []
+    batch_tbl: Optional[str] = None
+    batch_vals: List[str] = []
+    batch_len = 0
+
+    def flush() -> None:
+        nonlocal batch_tbl, batch_vals, batch_len
+        if batch_tbl is not None and batch_vals:
+            out.append(
+                f"INSERT OR IGNORE INTO {batch_tbl} VALUES\n"
+                + ",\n".join(batch_vals)
+                + ";"
+            )
+        batch_tbl, batch_vals, batch_len = None, [], 0
+
+    for stmt in statements:
+        s = stmt.strip()
+        if s in ("BEGIN TRANSACTION;", "COMMIT;"):
+            continue
+        m = _INSERT_RE.match(s)
+        if m:
+            tbl = m.group("tbl")
+            vals = m.group("vals")
+            if (
+                tbl != batch_tbl
+                or len(batch_vals) >= batch_size
+                or (batch_vals and batch_len + len(vals) > batch_bytes)
+            ):
+                flush()
+                batch_tbl = tbl
+            batch_vals.append(vals)
+            batch_len += len(vals) + 2
+            continue
+        # Non-INSERT statement (CREATE TABLE/INDEX): flush the pending batch,
+        # then emit it made idempotent.
+        flush()
+        if s.startswith("CREATE TABLE "):
+            s = s.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1)
+        elif s.startswith("CREATE INDEX "):
+            s = s.replace("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ", 1)
+        out.append(s)
+
+    flush()
+    return "\n".join(out).strip() + "\n"
 
 # Emitted as a SEPARATE file, applied AFTER `wrangler d1 import` completes —
 # D1's export/import breaks on dumps containing virtual tables.
@@ -187,7 +245,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     conn = sqlite3.connect(str(serving_path))
     try:
-        sql_path.write_text(_make_idempotent("\n".join(conn.iterdump())))
+        sql_path.write_text(_dump_to_batched_sql(conn.iterdump()))
     finally:
         conn.close()
     fts5_path.write_text(FTS5_SETUP_SQL)

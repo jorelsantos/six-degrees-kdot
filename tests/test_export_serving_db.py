@@ -12,7 +12,7 @@ Worker's lazy resolve can tell "confirmed miss" from "never checked").
 import sqlite3
 
 from database import CollaborationDatabase, NO_TRACK_SENTINEL, PHOTO_NONE_SENTINEL
-from export_serving_db import FTS5_SETUP_SQL, build_serving_db
+from export_serving_db import FTS5_SETUP_SQL, _dump_to_batched_sql, build_serving_db
 
 KENDRICK = "kdot"
 
@@ -148,6 +148,40 @@ def test_unreached_artist_exports_with_null_distance(tmp_path):
                        ("island",)).fetchone()
     assert row[0] is None
     assert row[1] is None
+
+
+def test_sql_dump_batches_rows_and_preserves_apostrophes(tmp_path):
+    """The D1 SQL dump must (a) coalesce rows into multi-row INSERT batches so
+    the import is fast, and (b) preserve SQL escaping for names containing an
+    apostrophe — the Drake/Future fixtures alone have none, so a naive
+    hand-serializer would pass every other test while breaking on real data."""
+    db = _db(tmp_path)
+    _wire_chain(db)
+    db.add_artist("gnr", "Guns N' Roses")  # apostrophe: the escaping tripwire
+    out = tmp_path / "serving.db"
+    build_serving_db(db, out)
+
+    src = sqlite3.connect(str(out))
+    try:
+        sql = _dump_to_batched_sql(src.iterdump())
+    finally:
+        src.close()
+
+    # (a) Batching: far fewer INSERT statements than rows — one per table, not
+    # one per row. Four artists + aliases would be >=5 single-row INSERTs.
+    assert sql.count("INSERT OR IGNORE INTO") <= 3
+    assert "VALUES\n(" in sql  # multi-row batch shape
+
+    # (b) Applying the dump to a fresh DB round-trips the apostrophe intact and
+    # reproduces every row (no malformed SQL, no dropped rows).
+    fresh = sqlite3.connect(":memory:")
+    fresh.executescript(sql)
+    assert fresh.execute("SELECT name FROM artists WHERE id='gnr'").fetchone()[0] == "Guns N' Roses"
+    assert fresh.execute("SELECT COUNT(*) FROM artists").fetchone()[0] == 4
+
+    # Idempotent: applying a second time neither errors nor duplicates.
+    fresh.executescript(sql)
+    assert fresh.execute("SELECT COUNT(*) FROM artists").fetchone()[0] == 4
 
 
 def test_rerun_fully_overwrites_the_serving_db(tmp_path):
