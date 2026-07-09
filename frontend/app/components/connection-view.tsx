@@ -130,6 +130,16 @@ function ConnectionResult({
 
   return (
     <div>
+      {/* U5 chain entrance. Inline <style> (not globals.css) so the rule ships
+          in the render output and isn't dropped by the Tailwind v4 pipeline;
+          it's a declarative CSS animation, so it plays on load without waiting
+          on JS, and is fully disabled under prefers-reduced-motion. */}
+      <style>{`
+        @keyframes rhRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+        .rh-rise-node { animation: rhRise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+        @media (prefers-reduced-motion: reduce) { .rh-rise-node { animation: none; } }
+      `}</style>
+
       {showNotice && start && (
         <p className="mb-3 text-center text-bodySm text-content-secondary">
           Showing results for <span className="font-bold text-brand">{start}</span>
@@ -153,15 +163,19 @@ function ConnectionResult({
       <div className="mt-8 flex flex-col items-center">
         {connection.path.map((artist, i) => (
           <div key={artist.id} className="flex w-full flex-col items-center">
-            <ChainNode
-              id={artist.id}
-              name={artist.name}
-              photoUrl={artist.photo_url}
-              isBase={i === lastIndex}
-              // Intermediate nodes are traversable; endpoints are not — i===0 is
-              // the searched artist (current page), i===lastIndex is Kendrick.
-              href={i > 0 && i < lastIndex ? `/connection/${artist.id}` : null}
-            />
+            {/* rh-rise-node: staggered entrance on the nodes only (U5); the
+                embeds below have their own transition. */}
+            <div className="rh-rise-node" style={{ animationDelay: `${i * 90}ms` }}>
+              <ChainNode
+                id={artist.id}
+                name={artist.name}
+                photoUrl={artist.photo_url}
+                isBase={i === lastIndex}
+                // Intermediate nodes are traversable; endpoints are not — i===0 is
+                // the searched artist (current page), i===lastIndex is Kendrick.
+                href={i > 0 && i < lastIndex ? `/connection/${artist.id}` : null}
+              />
+            </div>
             {i < connection.hops.length && (
               <>
                 <DownArrow />
