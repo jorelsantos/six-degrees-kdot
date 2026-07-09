@@ -24,11 +24,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORKER="$ROOT/worker"
 EXPORT_DIR="$WORKER/export"
 
-if [ ! -f "$EXPORT_DIR/serving.sql" ]; then
-  echo "error: $EXPORT_DIR/serving.sql not found." >&2
-  echo "  run: python3 scripts/export_serving_db.py --db data/collaboration_network_mb.db" >&2
-  exit 1
-fi
+for f in serving.sql fts5_setup.sql; do
+  if [ ! -f "$EXPORT_DIR/$f" ]; then
+    echo "error: $EXPORT_DIR/$f not found." >&2
+    echo "  run: python3 scripts/export_serving_db.py --db data/collaboration_network_mb.db" >&2
+    exit 1
+  fi
+done
 
 cd "$WORKER"
 

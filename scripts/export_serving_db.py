@@ -141,23 +141,28 @@ def _dump_to_batched_sql(
         if m:
             tbl = m.group("tbl")
             vals = m.group("vals")
+            vals_bytes = len(vals.encode("utf-8"))  # true byte size — names may be multibyte
             if (
                 tbl != batch_tbl
                 or len(batch_vals) >= batch_size
-                or (batch_vals and batch_len + len(vals) > batch_bytes)
+                or (batch_vals and batch_len + vals_bytes > batch_bytes)
             ):
                 flush()
                 batch_tbl = tbl
             batch_vals.append(vals)
-            batch_len += len(vals) + 2
+            batch_len += vals_bytes + 2
             continue
-        # Non-INSERT statement (CREATE TABLE/INDEX): flush the pending batch,
-        # then emit it made idempotent.
+        # Non-INSERT statement: flush the pending batch, then emit it made
+        # idempotent. A stray INSERT the batch regex didn't match also lands
+        # here — give it the same INSERT OR IGNORE form so a re-run can't
+        # conflict on it (preserves the idempotence guarantee for every row).
         flush()
         if s.startswith("CREATE TABLE "):
             s = s.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1)
         elif s.startswith("CREATE INDEX "):
             s = s.replace("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ", 1)
+        elif s.startswith("INSERT INTO "):
+            s = s.replace("INSERT INTO ", "INSERT OR IGNORE INTO ", 1)
         out.append(s)
 
     flush()

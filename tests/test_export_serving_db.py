@@ -184,6 +184,28 @@ def test_sql_dump_batches_rows_and_preserves_apostrophes(tmp_path):
     assert fresh.execute("SELECT COUNT(*) FROM artists").fetchone()[0] == 4
 
 
+def test_batch_flush_boundaries_split_into_multiple_statements():
+    """Directly exercise the flush conditions the tiny-fixture round-trip test
+    never triggers: batch_size (row count) and batch_bytes. A regression in
+    either boundary would otherwise pass every other test."""
+    rows = [f"INSERT INTO \"t\" VALUES({i},'name{i}');" for i in range(10)]
+
+    # batch_size=3 over 10 rows -> ceil(10/3) = 4 INSERT statements.
+    by_count = _dump_to_batched_sql(rows, batch_size=3, batch_bytes=10_000)
+    assert by_count.count("INSERT OR IGNORE INTO") == 4
+
+    # batch_bytes tiny -> each row flushes on its own -> 10 statements.
+    by_bytes = _dump_to_batched_sql(rows, batch_size=500, batch_bytes=5)
+    assert by_bytes.count("INSERT OR IGNORE INTO") == 10
+
+    # A value containing ');' must not truncate the statement (greedy-regex guarantee).
+    tricky = ["INSERT INTO \"t\" VALUES(1,'ev);il');"]
+    out = _dump_to_batched_sql(tricky, batch_size=500, batch_bytes=10_000)
+    fresh = sqlite3.connect(":memory:")
+    fresh.executescript("CREATE TABLE t (id INTEGER, name TEXT);\n" + out)
+    assert fresh.execute("SELECT name FROM t WHERE id=1").fetchone()[0] == "ev);il"
+
+
 def test_rerun_fully_overwrites_the_serving_db(tmp_path):
     """A re-export must reflect the CURRENT master DB state, not merge with
     a stale prior export (KTD6: re-import is cheap and repeatable)."""
