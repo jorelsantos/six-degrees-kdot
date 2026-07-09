@@ -57,6 +57,30 @@ def test_wikidata_hit_short_circuits_later_stages(tmp_path, monkeypatch):
     assert db.get_photo_urls(["a", "b"]) == {"a": WD_URL, "b": WD_URL}
 
 
+def test_wikidata_rate_limit_falls_through_to_deezer(tmp_path, monkeypatch):
+    """A Wikidata 429 must NOT abort the whole run — it skips only the Wikidata
+    stage and lets Deezer (the bulk workhorse, usually not throttled at the same
+    time) still resolve photos. Regression guard for the strict-anti-scraping-
+    tier case where our IP is blocked at Wikidata but Deezer stays open."""
+    db = _db(tmp_path)
+    _wire_artists(db, [("a", "Artist A"), ("b", "Artist B")])
+
+    def wd_429(mbids, timeout=None):
+        raise _HTTPError429()
+
+    monkeypatch.setattr(photo_prebake, "resolve_wikidata_batch", wd_429)
+    monkeypatch.setattr(photo_prebake, "resolve_deezer_single", lambda name, timeout=None: DZ_URL)
+    monkeypatch.setattr(photo_prebake, "resolve_theaudiodb_single",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("tail not reached — Deezer resolved all")))
+
+    summary = prebake(db, wikidata_rate=0, deezer_rate=0, theaudiodb_rate=0)
+
+    assert summary["wikidata_hits"] == 0
+    assert summary["deezer_hits"] == 2
+    assert summary["aborted"] == 0  # Wikidata 429 no longer vetoes the run
+    assert db.get_photo_urls(["a", "b"]) == {"a": DZ_URL, "b": DZ_URL}
+
+
 def test_deezer_fills_wikidata_miss(tmp_path, monkeypatch):
     db = _db(tmp_path)
     _wire_artists(db, [("a", "Artist A"), ("b", "Artist B")])

@@ -19,11 +19,15 @@ This inverts the live path's Wikidata->TheAudioDB->Deezer order deliberately
 
 Resumability + rate hygiene (same idiom as popularity_enrich.py /
 spotify_enrich.py): `photo_url IS NULL` is the resume marker (checked via
-get_unphotographed_artists); a rate-limit response (429, detected across the
-three heterogeneous fetchers) aborts the WHOLE run cleanly — rows touched so
-far stay persisted, everything else stays NULL for a later resume. Only after
-an artist has been consulted by all three tiers with no error anywhere is it
-marked the "none" sentinel (genuinely no photo, never re-queried).
+get_unphotographed_artists). Rate-limit (429) handling differs by stage: a
+Wikidata 429 skips only the Wikidata stage and falls through to Deezer (our IP
+can sit in Wikidata's strict anti-scraping tier while Deezer stays open, and
+Deezer is the bulk workhorse), leaving those MBIDs NULL for Wikidata to retry
+later; a Deezer or TheAudioDB 429 aborts the WHOLE run cleanly (workhorse/tail —
+throttled there means stop). Rows touched stay persisted; everything else stays
+NULL for a later resume. Only after an artist has been consulted by all three
+tiers with no error anywhere is it marked the "none" sentinel (genuinely no
+photo, never re-queried).
 
 CLI:
     python3 src/photo_prebake.py --db data/collaboration_network_mb.db
@@ -125,9 +129,16 @@ def prebake(
             hits = resolve_wikidata_batch(chunk, timeout=timeout)
         except Exception as exc:  # noqa: BLE001 — any fetch failure degrades this chunk
             if _is_rate_limited(exc):
-                aborted = True
-                log(f"  429 rate limit (Wikidata) — aborting cleanly; "
-                    f"{len(resolved)} resolved so far, rest left for resume.")
+                # Wikidata alone being rate-limited must NOT veto the rest of
+                # the waterfall: Deezer is the bulk workhorse and is usually not
+                # throttled at the same time (and our IP can sit in Wikidata's
+                # strict anti-scraping tier while Deezer stays open). Skip the
+                # Wikidata stage and fall through to Deezer, leaving these MBIDs
+                # NULL for Wikidata to retry on a later run. (A Deezer or
+                # TheAudioDB 429 below still aborts the whole run — those are the
+                # workhorse/tail, so being throttled there means stop.)
+                log(f"  429 rate limit (Wikidata) — skipping Wikidata stage, "
+                    f"continuing with Deezer; {len(resolved)} resolved so far.")
                 break
             error_ids.update(chunk)
             continue
